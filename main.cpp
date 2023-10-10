@@ -2,6 +2,7 @@
 #include "cdcl.hpp"
 
 int main(){
+    //freopen("test/data.in","r",stdin);
     DIMACS d;
     d.Input();
 
@@ -14,6 +15,7 @@ int main(){
 
     cdcl.print();
     //cdcl.debug();
+    //fclose(stdin);
 
     return 0;
 }

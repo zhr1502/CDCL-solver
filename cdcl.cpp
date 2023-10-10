@@ -43,18 +43,29 @@ void CDCL::solve()
         auto up_result = this->unit_propogation();
         while (up_result.second)
         {
-            Assign deassign = pick_stack.top();
-            deassign.value = Value::Free;
-            this->update(deassign);
+            Assign deassign;
+            auto last_conflict_clause = *(this->conflict_clause.end() - 1);
+            auto unpick_to_variable = 0;
+            if (last_conflict_clause->clause->literals.size() >= 2)
+                unpick_to_variable =
+                    (*(last_conflict_clause->clause->literals.end() - 2))
+                        ->index;
+            do
+            {
+                deassign = pick_stack.top();
+                deassign.value = Value::Free;
+                this->update(deassign);
 
-            this->graph->drop_to(this->pick_stack.size());
+                this->graph->drop_to(this->pick_stack.size());
 
-            this->pick_stack.pop();
+                this->pick_stack.pop();
+            } while (deassign.variable_index != unpick_to_variable);
 
             // std::cout << "===A Conflict Clause has been generated==="
             //           << std::endl;
 
             // this->debug();
+            // last_conflict_clause->debug();
 
             up_result = this->unit_propogation();
 
@@ -377,6 +388,7 @@ void ImplGraph::drop_to(int rank)
     for (; rel >= this->relations.begin(); rel--)
     {
         if ((*rel)->conclusion->rank < rank) break;
+        if ((*rel)->premise != nullptr) (*rel)->premise->relation.pop_back();
         delete (*rel);
     }
     relations.resize(rel - relations.begin() + 1);
@@ -435,7 +447,8 @@ void ImplGraph::debug()
         for (auto rel : node->relation)
             if (rel->premise == node)
             {
-                std::cout << " -> "
+                std::cout << " -- Caause " << rel->relation_clause->index
+                          << " -> "
                           << "Variable "
                           << rel->conclusion->assign->variable_index
                           << std::endl;
@@ -454,9 +467,9 @@ void CDCL::debug()
         std::cout << "Variable " << assign.variable_index << " -> "
                   << to_string(assign.value) << std::endl;
 
-    std::cout << std::endl << "Clauses:" << std::endl;
-    for (auto c : clause) c->debug();
-    std::cout << std::endl;
+    // std::cout << std::endl << "Clauses:" << std::endl;
+    // for (auto c : clause) c->debug();
+    // std::cout << std::endl;
 
     std::cout << std::endl << "Learned Conflict Clauses:" << std::endl;
     for (auto c : conflict_clause) c->debug();
