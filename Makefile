@@ -1,5 +1,5 @@
 obj = tmp/cdcl.o tmp/cnf.o tmp/main.o
-flags = -g2 -Wall -std=c++17
+flags = -g2 -Wall -O2 -std=c++17
 
 bin/main: $(obj)
 	g++ $(obj) -o $@ $(flags)

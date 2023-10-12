@@ -1,8 +1,8 @@
-#include<iostream>
+#include <iostream>
 #include "cdcl.hpp"
 
-int main(){
-    //freopen("test/data.in","r",stdin);
+int main()
+{
     DIMACS d;
     d.Input();
 
@@ -14,8 +14,7 @@ int main(){
     cdcl.solve();
 
     cdcl.print();
-    //cdcl.debug();
-    //fclose(stdin);
+    cdcl.debug();
 
     return 0;
 }

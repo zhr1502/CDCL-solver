@@ -18,8 +18,9 @@ std::string to_string(const Value value)
 }
 void CDCL::solve()
 {
-    srand(758926699);
+    if(this->solved) return;
 
+    srand(758926699);
     this->solved = true;
     auto up_result = this->unit_propogation();
     if (up_result.second)
@@ -44,28 +45,21 @@ void CDCL::solve()
         while (up_result.second)
         {
             Assign deassign;
+            deassign.value = Value::Free;
+
             auto last_conflict_clause = *(this->conflict_clause.end() - 1);
-            auto unpick_to_variable = 0;
-            if (last_conflict_clause->clause->literals.size() >= 2)
-                unpick_to_variable =
-                    (*(last_conflict_clause->clause->literals.end() - 2))
-                        ->index;
+            auto unpick_to_variable =
+                (*(last_conflict_clause->clause->literals.end() - 1))->index;
+
             do
             {
                 deassign = pick_stack.top();
                 deassign.value = Value::Free;
+
                 this->update(deassign);
-
                 this->graph->drop_to(this->pick_stack.size());
-
                 this->pick_stack.pop();
             } while (deassign.variable_index != unpick_to_variable);
-
-            // std::cout << "===A Conflict Clause has been generated==="
-            //           << std::endl;
-
-            // this->debug();
-            // last_conflict_clause->debug();
 
             up_result = this->unit_propogation();
 
@@ -73,7 +67,6 @@ void CDCL::solve()
                 0)
                 break;
         }
-        // this->debug();
 
     } while (!pick_stack.empty());
 
@@ -149,21 +142,18 @@ std::pair<std::vector<Assign>, bool> CDCL::unit_propogation()
     return std::pair(picked_lits, conflict);
 }
 
-std::pair<ClauseWrapper*, bool> CDCL::update(Assign assign)
+std::pair<ClauseWrapper*, bool> CDCL::update(Assign assign, bool do_return)
 {
     this->assignment[assign.variable_index] = assign;
-    // std::cout << "CDCL::update(): The value of assign is "
-    //           << assign.variable_index << " and " << to_string(assign.value)
-    //           << std::endl;
 
     for (auto c : conflict_clause)
-        if (c->update(assign))
+        if (c->update(assign) && do_return)
         {
             return std::pair(c, true);
         }
 
     for (auto c : clause)
-        if (c->update(assign))
+        if (c->update(assign) && do_return)
         {
             return std::pair(c, true);
         }
@@ -201,7 +191,7 @@ void CDCL::init(CNF* cnf)
     for (int i = 0; i <= cnf->variable_number; i++)
         this->assignment.push_back(Assign{i, Value::Free});
 
-    ImplGraph* graph = new ImplGraph;
+    ImpGraph* graph = new ImpGraph;
     graph->init(this);
 
     this->graph = graph;
@@ -265,41 +255,38 @@ bool ClauseWrapper::update(Assign assign)
     return (!satisfied && picked_lits_number == clause->literals.size());
 }
 
-void ImplGraph::init(CDCL* cdcl)
+void ImpGraph::init(CDCL* cdcl)
 {
     this->cdcl = cdcl;
-    ImplNode* null_node = new ImplNode;
+    ImpNode* null_node = new ImpNode;
     null_node->assign = &cdcl->assignment[0];
     null_node->rank = -1;
 
     this->map_from_vars_to_nodes.resize(cdcl->origin_cnf->variable_number + 1,
                                         nullptr);
-    // for (int i = 0; i <= this->cdcl->origin_cnf->variable_number; i++)
-    //     this->nodes.push_back(null_node);
-    // this->nodes.push_back(null_node);
     return;
 }
 
-void ImplGraph::construct(
+void ImpGraph::construct(
     std::pair<ClauseWrapper*, Literal*> propagated_literal)
 {
     int rank = this->cdcl->pick_stack.size();
 
     auto& [clause, lit] = propagated_literal;
     Assign* assign = &(this->cdcl->assignment.at(lit->index));
-    ImplNode* conclusion = this->add_node(assign, rank);
+    ImpNode* conclusion = this->add_node(assign, rank);
 
     if (clause != nullptr)
     {
         if (clause->clause->literals.size() == 1)
         {
-            ImplRelation* relation = this->add_rel(nullptr, conclusion, clause);
+            ImpRelation* relation = this->add_rel(nullptr, conclusion, clause);
         }
         else
             for (auto clause_lit : clause->clause->literals)
                 if (clause_lit != lit)
                 {
-                    ImplRelation* relation = this->add_rel(
+                    ImpRelation* relation = this->add_rel(
                         this->map_from_vars_to_nodes.at(clause_lit->index),
                         conclusion, clause);
                 }
@@ -307,9 +294,9 @@ void ImplGraph::construct(
     return;
 }
 
-ImplNode* ImplGraph::add_node(Assign* assign, int rank)
+ImpNode* ImpGraph::add_node(Assign* assign, int rank)
 {
-    ImplNode* node = new ImplNode;
+    ImpNode* node = new ImpNode;
     node->assign = assign;
     node->rank = rank;
     this->map_from_vars_to_nodes[assign->variable_index] = node;
@@ -317,10 +304,10 @@ ImplNode* ImplGraph::add_node(Assign* assign, int rank)
     return node;
 }
 
-ImplRelation* ImplGraph::add_rel(ImplNode* premise, ImplNode* conclusion,
+ImpRelation* ImpGraph::add_rel(ImpNode* premise, ImpNode* conclusion,
                                  ClauseWrapper* clause)
 {
-    ImplRelation* rel = new ImplRelation;
+    ImpRelation* rel = new ImpRelation;
     rel->premise = premise;
     rel->conclusion = conclusion;
     rel->relation_clause = clause->clause;
@@ -332,13 +319,13 @@ ImplRelation* ImplGraph::add_rel(ImplNode* premise, ImplNode* conclusion,
     return rel;
 }
 
-Clause* ImplGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
+Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
 {
     Clause* learned_clause = new Clause;
     learned_clause->cnf = this->cdcl->cdcl_cnf;
     learned_clause->index = this->cdcl->conflict_clause.size();
 
-    std::queue<ImplNode*> queue;
+    std::queue<ImpNode*> queue;
     std::map<int, bool> variable_in_learned_clause;
     for (auto lit : conflict_clause->clause->literals)
     {
@@ -346,7 +333,7 @@ Clause* ImplGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
         if (node == nullptr)
         {
             std::cout
-                << "ImplGraph::conflict_clause_gen: Unassigned variable found."
+                << "ImpGraph::conflict_clause_gen: Unassigned variable found."
                 << std::endl;
             abort();
         }
@@ -382,7 +369,7 @@ Clause* ImplGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
     return learned_clause;
 }
 
-void ImplGraph::drop_to(int rank)
+void ImpGraph::drop_to(int rank)
 {
     auto rel = this->relations.end() - 1;
     for (; rel >= this->relations.begin(); rel--)
@@ -394,14 +381,15 @@ void ImplGraph::drop_to(int rank)
     relations.resize(rel - relations.begin() + 1);
 
     auto node = this->nodes.end() - 1;
-    Assign deassign = Assign{0, Value::Free};
+    Assign deassign;
+    deassign.value = Value::Free;
     for (; node >= this->nodes.begin(); node--)
     {
         if ((*node)->rank < rank) break;
         map_from_vars_to_nodes.at((*node)->assign->variable_index) = nullptr;
         deassign.variable_index = (*node)->assign->variable_index;
 
-        this->cdcl->update(deassign);
+        this->cdcl->update(deassign, false);
 
         delete (*node);
     }
@@ -409,7 +397,7 @@ void ImplGraph::drop_to(int rank)
     return;
 }
 
-void ImplGraph::drop()
+void ImpGraph::drop()
 {
     this->drop_to(-1);
     return;
@@ -437,7 +425,7 @@ void ClauseWrapper::debug()
     return;
 }
 
-void ImplGraph::debug()
+void ImpGraph::debug()
 {
     for (auto node : this->nodes)
     {
@@ -467,15 +455,11 @@ void CDCL::debug()
         std::cout << "Variable " << assign.variable_index << " -> "
                   << to_string(assign.value) << std::endl;
 
-    // std::cout << std::endl << "Clauses:" << std::endl;
-    // for (auto c : clause) c->debug();
-    // std::cout << std::endl;
-
     std::cout << std::endl << "Learned Conflict Clauses:" << std::endl;
     for (auto c : conflict_clause) c->debug();
     std::cout << std::endl;
 
-    std::cout << std::endl << "Imply Graph:" << std::endl;
+    std::cout << std::endl << "Implication Graph:" << std::endl;
     graph->debug();
 
     std::cout << "Satisfiable:" << (satisfiable ? "Yes" : "No") << std::endl
@@ -491,8 +475,9 @@ void CDCL::print()
     }
     std::cout << std::endl;
     std::cout << "Satisfiable: " << (satisfiable ? "Yes" : "No") << std::endl;
-    std::cout << "Possible Truth Assignment:" << std::endl;
     if (satisfiable)
+    {
+        std::cout << "Possible Truth Assignment:" << std::endl;
         for (auto assign = assignment.begin() + 1; assign != assignment.end();
              assign++)
         {
@@ -501,12 +486,5 @@ void CDCL::print()
                              .substr(((std::string) "Value::").length())
                       << std::endl;
         }
-    // std::cout << (satisfiable ? "Yes" : "No") << std::endl;
-    // if (satisfiable)
-    //     for (auto assign = assignment.begin() + 1; assign !=
-    //     assignment.end();
-    //          assign++)
-    //     {
-    //         std::cout << ((*assign).value == Value::True) << " ";
-    //     }
+    }
 }
