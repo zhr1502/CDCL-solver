@@ -23,6 +23,7 @@ int main()
     CDCL *cdcl = new CDCL;
 
     double max_time = 0, min_time = 1.0 / 0.0, total_time = 0;
+    int sat_number = 0, unsat_number = 0;
 
     for (int iter = 1; iter <= N; iter++)
     {
@@ -47,6 +48,9 @@ int main()
             return -1;
         }
 
+        if(cdcl->satisfiable) sat_number++;
+        else unsat_number++;
+
         auto duration = end - start;
         auto duration_mili =
             std::chrono::duration<double, std::milli>(duration).count();
@@ -63,6 +67,8 @@ int main()
     cout << endl << "Time consuming:" << endl;
     cout << "Max: " << max_time << "ms  Min: " << min_time
          << "ms  Average: " << total_time / N << "ms" << endl;
+
+    cout << "SAT: " << sat_number << "  UNSAT: " << unsat_number << endl;
 
     return 0;
 }
