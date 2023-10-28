@@ -18,9 +18,9 @@ std::string to_string(const Value value)
 }
 void CDCL::solve()
 {
-    if(this->solved) return;
+    if (this->solved) return;
 
-    srand(758926699);
+    srand(75892669);
     this->solved = true;
     auto up_result = this->unit_propogation();
     if (up_result.second)
@@ -32,7 +32,7 @@ void CDCL::solve()
         if (pick_lit == nullptr)
         {
             satisfiable = true;
-            break;
+            return;
         }
         Assign assign =
             Assign{pick_lit->index, rand() % 2 ? Value::False : Value::True};
@@ -59,19 +59,19 @@ void CDCL::solve()
                 this->update(deassign);
                 this->graph->drop_to(this->pick_stack.size());
                 this->pick_stack.pop();
+
             } while (deassign.variable_index != unpick_to_variable);
 
             up_result = this->unit_propogation();
 
             if ((*(this->conflict_clause.end() - 1))->clause->literals.size() ==
                 0)
-                break;
+            {
+                satisfiable = false;
+                return;
+            }
         }
-
-    } while (!pick_stack.empty());
-
-    satisfiable = true;
-    for (auto c : clause) satisfiable &= c->satisfied;
+    } while (true);
 
     return;
 }
@@ -128,6 +128,7 @@ std::pair<std::vector<Assign>, bool> CDCL::unit_propogation()
 
             Clause* learned_clause =
                 this->graph->conflict_clause_gen(update_result.first);
+
             ClauseWrapper* learned_clause_wrapped =
                 new ClauseWrapper(learned_clause);
 
@@ -135,6 +136,7 @@ std::pair<std::vector<Assign>, bool> CDCL::unit_propogation()
                 learned_clause_wrapped->update(assign);
 
             this->conflict_clause.push_back(learned_clause_wrapped);
+            this->cdcl_cnf->clauses.push_back(learned_clause);
         }
 
     } while (!conflict);
@@ -179,6 +181,7 @@ Literal* CDCL::choose_variable()
 
 void CDCL::init(CNF* cnf)
 {
+    this->drop();
     this->origin_cnf = cnf;
 
     CNF* conflict_cnf = new CNF;
@@ -255,42 +258,60 @@ bool ClauseWrapper::update(Assign assign)
     return (!satisfied && picked_lits_number == clause->literals.size());
 }
 
+void ClauseWrapper::drop()
+{
+    lits_value.reserve(0);
+    lits_pos.clear();
+    delete this;
+}
+
 void ImpGraph::init(CDCL* cdcl)
 {
     this->cdcl = cdcl;
-    ImpNode* null_node = new ImpNode;
-    null_node->assign = &cdcl->assignment[0];
-    null_node->rank = -1;
 
     this->map_from_vars_to_nodes.resize(cdcl->origin_cnf->variable_number + 1,
                                         nullptr);
     return;
 }
 
-void ImpGraph::construct(
-    std::pair<ClauseWrapper*, Literal*> propagated_literal)
+void ImpGraph::construct(std::pair<ClauseWrapper*, Literal*> propagated_literal)
 {
-    int rank = this->cdcl->pick_stack.size();
-
+    int rank = 0;
     auto& [clause, lit] = propagated_literal;
     Assign* assign = &(this->cdcl->assignment.at(lit->index));
-    ImpNode* conclusion = this->add_node(assign, rank);
+    ImpNode* conclusion; //= this->add_node(assign, rank);
 
-    if (clause != nullptr)
+    if (clause ==
+        nullptr) // The variable is randomly picked, no cluase can derive to it.
     {
-        if (clause->clause->literals.size() == 1)
-        {
-            ImpRelation* relation = this->add_rel(nullptr, conclusion, clause);
-        }
-        else
-            for (auto clause_lit : clause->clause->literals)
-                if (clause_lit != lit)
-                {
-                    ImpRelation* relation = this->add_rel(
-                        this->map_from_vars_to_nodes.at(clause_lit->index),
-                        conclusion, clause);
-                }
+        rank = this->cdcl->pick_stack.size();
+        conclusion = this->add_node(assign, rank);
+        return;
     }
+
+    conclusion = new ImpNode;
+    conclusion->assign = assign;
+    conclusion->rank = 0;
+
+    if (clause->clause->literals.size() == 1)
+        this->add_rel(nullptr, conclusion, clause);
+    else
+        for (auto clause_lit : clause->clause->literals)
+            if (clause_lit != lit)
+            {
+                auto premise =
+                    this->map_from_vars_to_nodes.at(clause_lit->index);
+                this->add_rel(premise, conclusion, clause);
+                conclusion->rank = std::max(conclusion->rank, premise->rank);
+            }
+
+    if (conclusion->rank)
+        conclusion->rank = this->cdcl->pick_stack.size(),
+        this->nodes.push_back(conclusion);
+    else
+        this->fixed_var_nodes.push_back(conclusion);
+    this->map_from_vars_to_nodes.at(conclusion->assign->variable_index) =
+        conclusion;
     return;
 }
 
@@ -300,12 +321,15 @@ ImpNode* ImpGraph::add_node(Assign* assign, int rank)
     node->assign = assign;
     node->rank = rank;
     this->map_from_vars_to_nodes[assign->variable_index] = node;
-    this->nodes.push_back(node);
+    if (rank > 0)
+        this->nodes.push_back(node);
+    else
+        this->fixed_var_nodes.push_back(node);
     return node;
 }
 
 ImpRelation* ImpGraph::add_rel(ImpNode* premise, ImpNode* conclusion,
-                                 ClauseWrapper* clause)
+                               ClauseWrapper* clause)
 {
     ImpRelation* rel = new ImpRelation;
     rel->premise = premise;
@@ -321,13 +345,20 @@ ImpRelation* ImpGraph::add_rel(ImpNode* premise, ImpNode* conclusion,
 
 Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
 {
-    Clause* learned_clause = new Clause;
+    Clause* learned_clause = new Clause; // Create a new raw clause
     learned_clause->cnf = this->cdcl->cdcl_cnf;
     learned_clause->index = this->cdcl->conflict_clause.size();
 
-    std::queue<ImpNode*> queue;
-    std::map<int, bool> variable_in_learned_clause;
+    std::queue<ImpNode*>
+        queue; // queue stores all current nodes while toposorting
+    std::map<int, bool>
+        variable_in_learned_clause; // It is possible to pass the same node
+                                    // during the toposorting, thus it is
+                                    // nesscary to use map to reduct the
+                                    // them.
     for (auto lit : conflict_clause->clause->literals)
+    // Go through the clause that cause the
+    // conflict and push them to the queue
     {
         auto node = map_from_vars_to_nodes.at(lit->index);
         if (node == nullptr)
@@ -399,7 +430,27 @@ void ImpGraph::drop_to(int rank)
 
 void ImpGraph::drop()
 {
-    this->drop_to(-1);
+    for (auto n : this->nodes) n->drop();
+    for (auto n : this->fixed_var_nodes) n->drop();
+    for (auto r : this->relations) r->drop();
+    this->nodes.reserve(0);
+    this->fixed_var_nodes.reserve(0);
+    this->relations.reserve(0);
+    this->map_from_vars_to_nodes.reserve(0);
+    delete this;
+    return;
+}
+
+void ImpNode::drop()
+{
+    this->relation.reserve(0);
+    delete this;
+    return;
+}
+
+void ImpRelation::drop()
+{
+    delete this;
     return;
 }
 
@@ -466,6 +517,31 @@ void CDCL::debug()
               << std::endl;
 }
 
+void CDCL::drop()
+{
+    this->satisfiable = this->solved = false;
+    for (auto c : this->conflict_clause) c->drop();
+    for (auto c : this->clause) c->drop();
+
+    this->conflict_clause.clear();
+    this->clause.clear();
+
+    if (this->graph != nullptr)
+    {
+        this->graph->drop();
+        this->graph = nullptr;
+    }
+
+    this->assignment.clear();
+    while (!pick_stack.empty()) pick_stack.pop();
+
+    if (this->cdcl_cnf != nullptr) this->cdcl_cnf->drop();
+    delete this->cdcl_cnf;
+    this->cdcl_cnf = nullptr;
+    this->origin_cnf = nullptr;
+    return;
+}
+
 void CDCL::print()
 {
     if (!this->solved)
@@ -487,4 +563,43 @@ void CDCL::print()
                       << std::endl;
         }
     }
+}
+
+void CDCL::print_dimacs()
+{
+    if (!this->solved)
+    {
+        std::cout << "CDCL::print_dimacs(): Error: Not solved yet."
+                  << std::endl;
+        return;
+    }
+    std::cout << "o cnf ";
+    std::cout << this->origin_cnf->variable_number << " "
+              << this->origin_cnf->clauses.size() << std::endl;
+
+    for (auto c : this->origin_cnf->clauses)
+    {
+        for (auto l : c->literals)
+        {
+            if (l->is_neg) std::cout << "-";
+            std::cout << l->index << " ";
+        }
+        std::cout << "0" << std::endl;
+    }
+
+    std::cout << "l cnf ";
+    std::cout << this->origin_cnf->variable_number << " "
+              << this->conflict_clause.size() << std::endl;
+
+    for (auto c : this->conflict_clause)
+    {
+        for (auto l : c->clause->literals)
+        {
+            if (l->is_neg) std::cout << "-";
+            std::cout << l->index << " ";
+        }
+        std::cout << "0" << std::endl;
+    }
+
+    return;
 }

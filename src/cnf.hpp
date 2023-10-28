@@ -1,3 +1,4 @@
+#include <istream>
 #include <string>
 #include <vector>
 
@@ -13,7 +14,7 @@ struct DIMACS
     std::vector<std::vector<int>> clauses;
     std::string form = "cnf";
     int literal_num = 0, clause_num = 0;
-    void Input();
+    void from_stringstream(std::istream&), Input();
 };
 
 struct Literal
@@ -24,6 +25,7 @@ struct Literal
     CNF *cnf;
     Literal(CNF *, int, bool);
     void debug();
+    void drop();
 };
 
 struct Clause
@@ -35,6 +37,7 @@ struct Clause
     void from_vec(CNF *, std::vector<int> *); // construct the clause from a
                                               // DIMACS format clause vector
     void debug();
+    void drop();
 };
 
 struct CNF
@@ -47,5 +50,6 @@ struct CNF
         int,
         bool); // insert a literal into vector "literals" and return a ptr to it
     void debug();
+    void drop();
 };
 

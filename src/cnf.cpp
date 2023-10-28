@@ -5,9 +5,12 @@
 #include <sstream>
 #include <string>
 
-void DIMACS::Input()
+void DIMACS::from_stringstream(std::istream& istream)
 {
-    std::getline(std::cin, this->header);
+    this->header.clear();
+    this->clauses.clear();
+
+    std::getline(istream, this->header);
 
     std::istringstream s_header(this->header);
     std::string s;
@@ -16,7 +19,7 @@ void DIMACS::Input()
     for (auto i = 1; std::getline(s_header, s, ' '); i++)
         header_args.push_back(s);
 
-    //this->? = header_args[0];  //todo
+    // this->? = header_args[0];  //todo
     this->form = header_args[1];
     this->literal_num = stoi(header_args[2]);
     this->clause_num = stoi(header_args[3]);
@@ -26,7 +29,7 @@ void DIMACS::Input()
         this->clauses.push_back(std::vector<int>());
 
         std::string clause_i;
-        std::getline(std::cin, clause_i);
+        std::getline(istream, clause_i);
 
         std::istringstream s_clause(clause_i);
 
@@ -37,6 +40,11 @@ void DIMACS::Input()
             (this->clauses.end() - 1)->push_back(stoi(s));
         }
     }
+    return;
+}
+
+void DIMACS::Input() {
+    this->from_stringstream(std::cin);
     return;
 }
 
@@ -69,6 +77,7 @@ void Clause::from_vec(CNF* cnf, std::vector<int>* clause)
 
 void CNF::from_DIMACS(DIMACS* src)
 {
+    this->drop();
     for (auto iter = src->clauses.begin(); iter != src->clauses.end(); iter++)
 
     {
@@ -90,14 +99,14 @@ Literal* CNF::insert_literal(int index, bool is_neg)
                            return lit->index == index && lit->is_neg == is_neg;
                        });
 
-    if (pos == this->literals.end())  // the given literal doesn't exist in CNF
+    if (pos == this->literals.end()) // the given literal doesn't exist in CNF
     {
         auto lit = new Literal(this, index, is_neg);
         this->literals.push_back(lit);
 
         return *(this->literals.end() - 1);
     }
-    else     // the given literal already exists in CNF
+    else // the given literal already exists in CNF
     {
         return *pos;
     }
@@ -126,5 +135,27 @@ void CNF::debug()
 {
     std::cout << "CNF debug info:" << std::endl;
     for (auto clause : this->clauses) clause->debug();
+    return;
+}
+
+void CNF::drop() {
+    for(auto c : this->clauses) c->drop();
+    for(auto l : this->literals) l->drop();
+    this->clauses.clear();
+    this->literals.clear();
+    this->clauses.reserve(0);
+    this->literals.reserve(0);
+    variable_number = 0;
+    return;
+}
+
+void Literal::drop() {
+    delete this;
+    return;
+}
+
+void Clause::drop() {
+    this->literals.reserve(0);
+    delete this;
     return;
 }

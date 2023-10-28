@@ -74,6 +74,8 @@ struct ClauseWrapper
 
     ClauseWrapper(Clause *); // Initialize a new ClauseWrapper with raw clause
 
+    void drop();
+
     void debug();
 };
 
@@ -85,6 +87,8 @@ struct ImpRelation
     // holds
     ImpNode *premise;
     ImpNode *conclusion;
+
+    void drop();
 };
 
 struct ImpNode
@@ -100,6 +104,9 @@ struct ImpNode
     // variable when it is generated
     // rank is useful when we need to drop some node in the graph due to a new
     // generated clause
+    bool fixed = false;
+
+    void drop();
 };
 
 struct ImpGraph
@@ -108,6 +115,7 @@ struct ImpGraph
     CDCL *cdcl;
     // Pointing to CDCL object the graph belongs to
     std::vector<ImpNode *> nodes;
+    std::vector<ImpNode *> fixed_var_nodes;
     std::vector<ImpRelation *> relations;
     std::vector<ImpNode *> map_from_vars_to_nodes;
     // Map from variable to node. If a variable is not assigned (i.e.
@@ -171,12 +179,13 @@ struct ImpGraph
 
 struct CDCL
 {
-    CNF *origin_cnf, *cdcl_cnf;
+    CNF *origin_cnf = nullptr, *cdcl_cnf = nullptr;
     std::vector<ClauseWrapper *> conflict_clause;
     std::vector<ClauseWrapper *> clause;
     std::vector<Assign> assignment;
     std::stack<Assign> pick_stack;
-    ImpGraph *graph;
+
+    ImpGraph *graph = nullptr;
     bool satisfiable = false, solved = false;
     // variable CDCL::solved will be set true when CDCL::solve() is called
     // CDCL::satisfiable <= CDCL::solved
@@ -199,8 +208,9 @@ struct CDCL
      * Do unit propagation. If there is conflict automatically generate conflict
      * clause and push it into self::conflict_clause.
      * Return Value:
-     * The first element of std::pair indicate which variables are assigned in propagation
-     * The second element of std::pair indicate whether there is conflict
+     * The first element of std::pair indicate which variables are assigned in
+     * propagation The second element of std::pair indicate whether there is
+     * conflict
      */
     std::pair<std::vector<Assign>, bool> unit_propogation();
 
@@ -214,5 +224,9 @@ struct CDCL
     void init(CNF *);
 
     void debug();
+
+    void drop();
+
     void print();
+    void print_dimacs();
 };

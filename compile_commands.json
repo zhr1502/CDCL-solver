@@ -5,14 +5,13 @@
       "-c",
       "-g2",
       "-Wall",
-      "-O1",
       "-std=c++17",
       "-o",
       "tmp/cdcl.o",
-      "cdcl.cpp"
+      "src/cdcl.cpp"
     ],
     "directory": "/home/zhr1502/project/CDCL-solver",
-    "file": "/home/zhr1502/project/CDCL-solver/cdcl.cpp",
+    "file": "/home/zhr1502/project/CDCL-solver/src/cdcl.cpp",
     "output": "/home/zhr1502/project/CDCL-solver/tmp/cdcl.o"
   },
   {
@@ -21,14 +20,13 @@
       "-c",
       "-g2",
       "-Wall",
-      "-O1",
       "-std=c++17",
       "-o",
       "tmp/cnf.o",
-      "cnf.cpp"
+      "src/cnf.cpp"
     ],
     "directory": "/home/zhr1502/project/CDCL-solver",
-    "file": "/home/zhr1502/project/CDCL-solver/cnf.cpp",
+    "file": "/home/zhr1502/project/CDCL-solver/src/cnf.cpp",
     "output": "/home/zhr1502/project/CDCL-solver/tmp/cnf.o"
   },
   {
@@ -37,14 +35,28 @@
       "-c",
       "-g2",
       "-Wall",
-      "-O1",
       "-std=c++17",
       "-o",
       "tmp/main.o",
-      "main.cpp"
+      "src/main.cpp"
     ],
     "directory": "/home/zhr1502/project/CDCL-solver",
-    "file": "/home/zhr1502/project/CDCL-solver/main.cpp",
+    "file": "/home/zhr1502/project/CDCL-solver/src/main.cpp",
     "output": "/home/zhr1502/project/CDCL-solver/tmp/main.o"
+  },
+  {
+    "arguments": [
+      "/nix/store/rj91g41smpmp92xvhx6rjxz6878bn2b4-gcc-wrapper-12.2.0/bin/g++",
+      "-c",
+      "-g2",
+      "-Wall",
+      "-std=c++17",
+      "-o",
+      "tmp/vertify.o",
+      "src/vertifier/vertify.cpp"
+    ],
+    "directory": "/home/zhr1502/project/CDCL-solver",
+    "file": "/home/zhr1502/project/CDCL-solver/src/vertifier/vertify.cpp",
+    "output": "/home/zhr1502/project/CDCL-solver/tmp/vertify.o"
   }
 ]
