@@ -55,7 +55,7 @@ int main()
         if (duration_mili < min_time) min_time = duration_mili;
         total_time += duration_mili;
 
-        if (iter % 1 == 0) cout << iter << " Assertions passed." << endl;
+        if (iter % 10 == 0) cout << iter << " Assertions passed." << endl;
     }
 
     cout << "All tests passed. No error reported." << endl;
