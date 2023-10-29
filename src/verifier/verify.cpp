@@ -8,7 +8,7 @@
 
 int main()
 {
-    int seed = 928287361;
+    int seed = 92822718;
     srand(seed);
 
     std::cout << "Tests iteration times & Variables number & Clauses number "

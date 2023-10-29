@@ -6,6 +6,8 @@
 #include <iostream>
 #include <queue>
 
+// Update content: Which clause a variable is in; a set of pickable clause.
+
 std::string to_string(const Value value)
 {
     switch (value)
@@ -20,7 +22,7 @@ void CDCL::solve()
 {
     if (this->solved) return;
 
-    srand(75892669);
+    srand(758926699);
     this->solved = true;
     auto up_result = this->unit_propogation();
     if (up_result.second)
@@ -84,38 +86,23 @@ std::pair<std::vector<Assign>, bool> CDCL::unit_propogation()
 
     do
     {
-        bool pure_lit_exist = false;
         std::pair<ClauseWrapper*, Literal*> pure_literal_with_clause;
 
-        for (auto c : this->conflict_clause)
-        {
-            Literal* pure_lit = c->find_pure_lit();
-            if (pure_lit != nullptr)
-            {
-                new_picked_lit =
-                    Assign{pure_lit->index,
-                           pure_lit->is_neg ? Value::False : Value::True};
-                pure_literal_with_clause = std::pair(c, pure_lit);
-                pure_lit_exist = true;
-                break;
-            }
-        }
-        if (!pure_lit_exist)
-            for (auto c : this->clause)
-            {
-                Literal* pure_lit = c->find_pure_lit();
-                if (pure_lit != nullptr)
-                {
-                    new_picked_lit =
-                        Assign{pure_lit->index,
-                               pure_lit->is_neg ? Value::False : Value::True};
-                    pure_literal_with_clause = std::pair(c, pure_lit);
-                    pure_lit_exist = true;
-                    break;
-                }
-            }
+        if (this->pickable_clause.empty()) break;
 
-        if (!pure_lit_exist) break;
+        auto c = *pickable_clause.begin();
+        auto pure_lit = c->find_pure_lit();
+        if (pure_lit == nullptr)
+        {
+            std::cout << "cdcl.cpp: CDCL::unit_propogation(): Should be able "
+                         "to find a pure lit but failed."
+                      << std::endl;
+            abort();
+        }
+
+        new_picked_lit = Assign{pure_lit->index,
+                                pure_lit->is_neg ? Value::False : Value::True};
+        pure_literal_with_clause = std::pair(c, pure_lit);
 
         picked_lits.push_back(new_picked_lit);
 
@@ -130,12 +117,9 @@ std::pair<std::vector<Assign>, bool> CDCL::unit_propogation()
                 this->graph->conflict_clause_gen(update_result.first);
 
             ClauseWrapper* learned_clause_wrapped =
-                new ClauseWrapper(learned_clause);
+                new ClauseWrapper(learned_clause, this);
 
-            for (auto assign : this->assignment)
-                learned_clause_wrapped->update(assign);
-
-            this->conflict_clause.push_back(learned_clause_wrapped);
+            this->add_clause(learned_clause_wrapped, this->conflict_clause);
             this->cdcl_cnf->clauses.push_back(learned_clause);
         }
 
@@ -148,19 +132,32 @@ std::pair<ClauseWrapper*, bool> CDCL::update(Assign assign, bool do_return)
 {
     this->assignment[assign.variable_index] = assign;
 
-    for (auto c : conflict_clause)
-        if (c->update(assign) && do_return)
-        {
-            return std::pair(c, true);
-        }
-
-    for (auto c : clause)
-        if (c->update(assign) && do_return)
-        {
-            return std::pair(c, true);
-        }
+    for (auto c : this->vars_contained_clause.at(assign.variable_index))
+        if (c->update(assign) && do_return) return std::pair(c, true);
 
     return std::pair(nullptr, false);
+}
+
+void CDCL::add_clause(ClauseWrapper* clause,
+                      std::vector<ClauseWrapper*>& clause_vec)
+{
+    clause_vec.push_back(clause);
+    auto pos = clause->lits_value.begin();
+    for (auto l : clause->clause->literals)
+    {
+        this->vars_contained_clause.at(l->index).push_back(clause);
+        auto value = assignment.at(l->index).value;
+        if (value != Value::Free)
+        {
+            clause->picked_lits_number++;
+            clause->satisfied_lits_num +=
+                ((value == Value::True && !l->is_neg) ||
+                 (value == Value::False && l->is_neg));
+        }
+        (*pos) = value;
+        pos++;
+    }
+    return;
 }
 
 Literal* CDCL::choose_variable()
@@ -188,11 +185,13 @@ void CDCL::init(CNF* cnf)
     conflict_cnf->variable_number = cnf->variable_number;
     this->cdcl_cnf = conflict_cnf;
 
-    for (auto c : origin_cnf->clauses)
-        this->clause.push_back(new ClauseWrapper(c));
-
     for (int i = 0; i <= cnf->variable_number; i++)
         this->assignment.push_back(Assign{i, Value::Free});
+
+    this->vars_contained_clause.resize(this->origin_cnf->variable_number + 1);
+
+    for (auto c : origin_cnf->clauses)
+        this->add_clause(new ClauseWrapper(c, this), this->clause);
 
     ImpGraph* graph = new ImpGraph;
     graph->init(this);
@@ -204,7 +203,8 @@ void CDCL::init(CNF* cnf)
 
 Literal* ClauseWrapper::find_pure_lit()
 {
-    if (satisfied || picked_lits_number != this->clause->literals.size() - 1)
+    if (satisfied_lits_num ||
+        picked_lits_number != this->clause->literals.size() - 1)
         return nullptr;
     int index = 0;
     for (auto lits = this->lits_value.begin(); lits != this->lits_value.end();
@@ -220,9 +220,10 @@ Literal* ClauseWrapper::find_pure_lit()
     abort();
 }
 
-ClauseWrapper::ClauseWrapper(Clause* clause)
+ClauseWrapper::ClauseWrapper(Clause* clause, CDCL* cdcl)
 {
     this->clause = clause;
+    this->cdcl = cdcl;
     this->lits_value.resize(this->clause->literals.size());
 
     int index = 0;
@@ -236,26 +237,42 @@ bool ClauseWrapper::update(Assign assign)
     auto f = this->lits_pos.find(assign.variable_index);
     if (f != this->lits_pos.end())
     {
-        this->lits_value[f->second] = assign.value;
-        auto literal = this->clause->literals.begin();
-        auto literal_value = this->lits_value.begin();
-
-        satisfied = false;
-        picked_lits_number = 0;
-
-        for (; literal != this->clause->literals.end() &&
-               literal_value != this->lits_value.end();
-             literal_value++, literal++)
+        bool pickable_before =
+            (!satisfied_lits_num &&
+             picked_lits_number == clause->literals.size() - 1);
+        auto id = f->second;
+        auto origin_value = this->lits_value.at(id);
+        if (origin_value != assign.value)
         {
-            if ((*literal_value == Value::False && (*literal)->is_neg) ||
-                (*literal_value == Value::True && !((*literal)->is_neg)))
-                satisfied = true;
+            if (origin_value == Value::Free && assign.value != Value::Free)
+                picked_lits_number++;
+            else if (origin_value != Value::Free && assign.value == Value::Free)
+                picked_lits_number--;
 
-            if (*literal_value != Value::Free) picked_lits_number++;
+            bool is_neg = this->clause->literals.at(id)->is_neg;
+
+            int is_satisfied_before =
+                ((origin_value == Value::False && is_neg) ||
+                 (origin_value == Value::True && !is_neg));
+            int is_satisfied_after =
+                ((assign.value == Value::False && is_neg) ||
+                 (assign.value == Value::True && !is_neg));
+
+            satisfied_lits_num += is_satisfied_after - is_satisfied_before;
         }
+        this->lits_value.at(id) = assign.value;
+        bool pickable_after =
+            (!satisfied_lits_num &&
+             picked_lits_number == clause->literals.size() - 1);
+
+        if (pickable_after && !pickable_before)
+            this->cdcl->pickable_clause.insert(this);
+        if (!pickable_after && pickable_before)
+            this->cdcl->pickable_clause.erase(this);
     }
 
-    return (!satisfied && picked_lits_number == clause->literals.size());
+    return (!satisfied_lits_num &&
+            picked_lits_number == clause->literals.size());
 }
 
 void ClauseWrapper::drop()
@@ -472,7 +489,8 @@ void ClauseWrapper::debug()
         std::cout << to_string(*literal_value) << std::endl;
     }
 
-    std::cout << "Satisfied: " << (satisfied ? "True" : "False") << std::endl;
+    std::cout << "Satisfied: " << (satisfied_lits_num ? "True" : "False")
+              << std::endl;
     return;
 }
 
@@ -522,6 +540,9 @@ void CDCL::drop()
     this->satisfiable = this->solved = false;
     for (auto c : this->conflict_clause) c->drop();
     for (auto c : this->clause) c->drop();
+
+    this->vars_contained_clause.clear();
+    this->pickable_clause.clear();
 
     this->conflict_clause.clear();
     this->clause.clear();

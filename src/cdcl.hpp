@@ -2,6 +2,7 @@
 #include <vector>
 #include <map>
 #include <stack>
+#include <set>
 
 struct ClauseWrapper;
 
@@ -35,12 +36,13 @@ struct ClauseWrapper
 // that contains useful information in DCL solving
 {
     Clause *clause;                // Pointing to raw clause
+    CDCL *cdcl;
     std::vector<Value> lits_value; // lits_value[index] indicate the current
                                    // value of this->clause->literals[index]
     std::map<int, int> lits_pos;   // Map from variable number to its index in
                                    // this->clause->literals
 
-    bool satisfied = 0;         // Is the clause satisfied currently
+    int satisfied_lits_num = 0;         // Is the clause satisfied currently
     int picked_lits_number = 0; // Numbers of how many variables appeared in the
                                 // clause have been picked.
 
@@ -72,7 +74,7 @@ struct ClauseWrapper
      */
     bool global_update(CDCL *);
 
-    ClauseWrapper(Clause *); // Initialize a new ClauseWrapper with raw clause
+    ClauseWrapper(Clause *, CDCL *); // Initialize a new ClauseWrapper with raw clause
 
     void drop();
 
@@ -185,6 +187,9 @@ struct CDCL
     std::vector<Assign> assignment;
     std::stack<Assign> pick_stack;
 
+    std::vector<std::vector<ClauseWrapper *>> vars_contained_clause;
+    std::set<ClauseWrapper *> pickable_clause;
+
     ImpGraph *graph = nullptr;
     bool satisfiable = false, solved = false;
     // variable CDCL::solved will be set true when CDCL::solve() is called
@@ -204,12 +209,20 @@ struct CDCL
     std::pair<ClauseWrapper *, bool> update(Assign, bool = true);
 
     /*
+     * CDCL::add_clause(clause)
+     * add a clause to the CDCL clause set. This method will update the member
+     * 'vars_contained_clause' and, if the new clause is pickable, add the
+     * clause to pickable_clause.
+     */
+    void add_clause(ClauseWrapper *, std::vector<ClauseWrapper* >&);
+
+    /*
      * CDCL::unit_propogation():
      * Do unit propagation. If there is conflict automatically generate conflict
      * clause and push it into self::conflict_clause.
      * Return Value:
      * The first element of std::pair indicate which variables are assigned in
-     * propagation The second element of std::pair indicate whether there is
+     * propagation The second element of std::pair indicate whether there is a
      * conflict
      */
     std::pair<std::vector<Assign>, bool> unit_propogation();
