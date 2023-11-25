@@ -1,12 +1,5 @@
 #include "cdcl.hpp"
-#include <algorithm>
-#include <cmath>
-#include <cstdio>
 #include <cstdlib>
-#include <iterator>
-#include <ostream>
-#include <ratio>
-#include <utility>
 #include <vector>
 #include <iostream>
 #include <queue>
