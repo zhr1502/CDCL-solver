@@ -1,4 +1,5 @@
 #include "cnf.hpp"
+#include <iterator>
 #include <vector>
 #include <map>
 #include <stack>
@@ -6,11 +7,11 @@
 
 struct ClauseWrapper;
 
-struct ImpNode;
+class ImpNode;
 
-struct ImpRel;
+class ImpRel;
 
-struct ImpGraph;
+class ImpGraph;
 
 struct Assign;
 
@@ -35,14 +36,14 @@ struct ClauseWrapper
 // ClauseWrapper: Object wraps a raw clause
 // that contains useful information in DCL solving
 {
-    Clause *clause;                // Pointing to raw clause
+    Clause *clause; // Pointing to raw clause
     CDCL *cdcl;
     std::vector<Value> lits_value; // lits_value[index] indicate the current
                                    // value of this->clause->literals[index]
     std::map<int, int> lits_pos;   // Map from variable number to its index in
                                    // this->clause->literals
 
-    int satisfied_lits_num = 0;         // Is the clause satisfied currently
+    int satisfied_lits_num = 0; // Is the clause satisfied currently
     int picked_lits_number = 0; // Numbers of how many variables appeared in the
                                 // clause have been picked.
 
@@ -74,14 +75,15 @@ struct ClauseWrapper
      */
     bool global_update(CDCL *);
 
-    ClauseWrapper(Clause *, CDCL *); // Initialize a new ClauseWrapper with raw clause
+    ClauseWrapper(Clause *,
+                  CDCL *); // Initialize a new ClauseWrapper with raw clause
 
     void drop();
 
     void debug();
 };
 
-struct ImpRelation
+class ImpRelation
 // ImpRelation: Object describe a edge in the CDCL's Implication graph
 {
     Clause *relation_clause;
@@ -90,39 +92,26 @@ struct ImpRelation
     ImpNode *premise;
     ImpNode *conclusion;
 
+public:
     void drop();
+    ImpNode *get_conclusion(), *get_premise();
+    ImpRelation(ClauseWrapper *, ImpNode *, ImpNode *);
 };
 
-struct ImpNode
-// ImpNode: Object describe a node in the CDCL's Implication graph
-{
-    std::vector<ImpRelation *> relation;
-    // Set of edges. Either conclusion or premise in these ImpRelation objects
-    // is self
-    Assign *assign;
-    int rank;
-    // rank: describe when a node is generated
-    // More accurately, the rank of a node depends on the number of the picked
-    // variable when it is generated
-    // rank is useful when we need to drop some node in the graph due to a new
-    // generated clause
-    bool fixed = false;
-
-    void drop();
-};
-
-struct ImpGraph
+class ImpGraph
 // ImpGraph: object that describe a CDCL Implication graph
 {
     CDCL *cdcl;
     // Pointing to CDCL object the graph belongs to
-    std::vector<ImpNode *> nodes;
-    std::vector<ImpNode *> fixed_var_nodes;
-    std::vector<ImpRelation *> relations;
-    std::vector<ImpNode *> map_from_vars_to_nodes;
+    // std::vector<ImpNode *> fixed_var_nodes;
+    // std::vector<ImpRelation *> relations;
+    std::vector<ImpNode *> vars_to_nodes;
+    std::vector<std::vector<ImpNode *>> trail;
+    std::vector<int> assigned_order;
     // Map from variable to node. If a variable is not assigned (i.e.
     // Value::Free), then map_from_vars_to_nodes[var_index] = nullptr.
 
+public:
     void init(CDCL *);
 
     /*
@@ -132,7 +121,7 @@ struct ImpGraph
      * The second is the newly assigned variable and the first is the clause by
      * which the variable's value is determined.
      */
-    void construct(std::pair<ClauseWrapper *, Literal *>);
+    void pick_var(ClauseWrapper *, Literal *);
 
     /*
      * ImpGraph::add_node(assign, rank):
@@ -149,7 +138,6 @@ struct ImpGraph
      * Return Value:
      * ptr pointing to the edge
      */
-    ImpRelation *add_rel(ImpNode *, ImpNode *, ClauseWrapper *);
 
     /*
      * ImpGraph::conflict_clause_gen(clause):
@@ -165,7 +153,7 @@ struct ImpGraph
 
     /*
      * ImpGraph::drop_to(rank)
-     * This will drop all nodes with ranks bigger or equal to rank
+     * This will drop all nodes with ranks bigger or equal to parameter 'rank'
      * also drop relevant edge
      */
     void drop_to(int);
@@ -175,7 +163,38 @@ struct ImpGraph
      * drop all nodes and edges
      */
     void drop();
+    void add_reason(ImpNode *, ImpNode *, ClauseWrapper *);
 
+    void debug();
+};
+
+class ImpNode
+// ImpNode: Object describe a node in the CDCL's Implication graph
+{
+    std::vector<ImpNode *> in_node, out_node;
+    std::vector<ClauseWrapper *> in_reason, out_reason;
+    // Set of edges. Either conclusion or premise in these ImpRelation objects
+    // is self
+    Assign *assign;
+    int rank;
+    // rank: describe when a node is generated
+    // More accurately, the rank of a node depends on the number of the picked
+    // variable when it is generated
+    // rank is useful when we need to drop some node in the graph due to a new
+    // generated clause
+    bool fixed = false;
+
+public:
+public:
+    ImpNode(Assign *, int, bool = false);
+    friend void ImpGraph::add_reason(ImpNode *, ImpNode *, ClauseWrapper *);
+    int get_rank();
+    int get_var_index();
+    Assign *get_assign();
+
+    const std::vector<ImpNode *> &get_in_node();
+
+    void drop();
     void debug();
 };
 
@@ -189,6 +208,7 @@ struct CDCL
 
     std::vector<std::vector<ClauseWrapper *>> vars_contained_clause;
     std::set<ClauseWrapper *> pickable_clause;
+    std::vector<int> vars_rank;
 
     ImpGraph *graph = nullptr;
     bool satisfiable = false, solved = false;
@@ -214,7 +234,7 @@ struct CDCL
      * 'vars_contained_clause' and, if the new clause is pickable, add the
      * clause to pickable_clause.
      */
-    void add_clause(ClauseWrapper *, std::vector<ClauseWrapper* >&);
+    void add_clause(ClauseWrapper *, std::vector<ClauseWrapper *> &);
 
     /*
      * CDCL::unit_propogation():
@@ -225,7 +245,7 @@ struct CDCL
      * propagation The second element of std::pair indicate whether there is a
      * conflict
      */
-    std::pair<std::vector<Assign>, bool> unit_propogation();
+    bool unit_propogation();
 
     /*
      * CDCL::choose_variable()

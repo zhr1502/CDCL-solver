@@ -44,12 +44,14 @@ int main()
         {
             cout << "Assertion Failed at test " << iter << endl;
             cout << "Input: " << endl;
-            cout << dstr<< endl;
+            cout << dstr << endl;
             return -1;
         }
 
-        if(cdcl->satisfiable) sat_number++;
-        else unsat_number++;
+        if (cdcl->satisfiable)
+            sat_number++;
+        else
+            unsat_number++;
 
         auto duration = end - start;
         auto duration_mili =
@@ -59,7 +61,9 @@ int main()
         if (duration_mili < min_time) min_time = duration_mili;
         total_time += duration_mili;
 
-        if (iter % 10 == 0) cout << iter << " Assertions passed." << endl;
+        if (iter % 10 == 0)
+            cout << iter << " Assertions passed." << endl,
+                cout << "Time consume: " << duration_mili << "ms" << endl;
     }
 
     cout << "All tests passed. No error reported." << endl;

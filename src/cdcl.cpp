@@ -1,12 +1,16 @@
 #include "cdcl.hpp"
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <iterator>
 #include <ostream>
+#include <ratio>
 #include <utility>
 #include <vector>
 #include <iostream>
 #include <queue>
-
-// Update content: Which clause a variable is in; a set of pickable clause.
+#include <chrono>
 
 std::string to_string(const Value value)
 {
@@ -25,7 +29,7 @@ void CDCL::solve()
     srand(758926699);
     this->solved = true;
     auto up_result = this->unit_propogation();
-    if (up_result.second)
+    if (up_result)
         return; // Unit propagation when no variable is picked returns conflict,
                 // the CNF is not satisfiable.
     do
@@ -41,28 +45,32 @@ void CDCL::solve()
         pick_stack.push(assign);
 
         this->update(assign);
-        this->graph->construct(std::pair(nullptr, pick_lit));
+        this->graph->pick_var(nullptr, pick_lit);
 
         auto up_result = this->unit_propogation();
-        while (up_result.second)
+        // this->debug();
+        while (up_result)
         {
             Assign deassign;
-            deassign.value = Value::Free;
 
             auto last_conflict_clause = *(this->conflict_clause.end() - 1);
-            auto unpick_to_variable =
-                (*(last_conflict_clause->clause->literals.end() - 1))->index;
+            auto conflict_clause_last_lit =
+                *(last_conflict_clause->clause->literals.end() - 1);
 
-            do
+            int unpick_to_rank;
+
+            if (last_conflict_clause->clause->literals.size() == 1)
+                unpick_to_rank = 1;
+            else
+                unpick_to_rank = vars_rank.at(conflict_clause_last_lit->index);
+
+            while (pick_stack.size() >= unpick_to_rank)
             {
                 deassign = pick_stack.top();
-                deassign.value = Value::Free;
-
-                this->update(deassign);
-                this->graph->drop_to(this->pick_stack.size());
                 this->pick_stack.pop();
+            }
 
-            } while (deassign.variable_index != unpick_to_variable);
+            this->graph->drop_to(unpick_to_rank);
 
             up_result = this->unit_propogation();
 
@@ -78,7 +86,7 @@ void CDCL::solve()
     return;
 }
 
-std::pair<std::vector<Assign>, bool> CDCL::unit_propogation()
+bool CDCL::unit_propogation()
 {
     std::vector<Assign> picked_lits;
     Assign new_picked_lit;
@@ -86,12 +94,10 @@ std::pair<std::vector<Assign>, bool> CDCL::unit_propogation()
 
     do
     {
-        std::pair<ClauseWrapper*, Literal*> pure_literal_with_clause;
-
         if (this->pickable_clause.empty()) break;
 
-        auto c = *pickable_clause.begin();
-        auto pure_lit = c->find_pure_lit();
+        auto reason = *pickable_clause.begin();
+        auto pure_lit = reason->find_pure_lit();
         if (pure_lit == nullptr)
         {
             std::cout << "cdcl.cpp: CDCL::unit_propogation(): Should be able "
@@ -102,12 +108,12 @@ std::pair<std::vector<Assign>, bool> CDCL::unit_propogation()
 
         new_picked_lit = Assign{pure_lit->index,
                                 pure_lit->is_neg ? Value::False : Value::True};
-        pure_literal_with_clause = std::pair(c, pure_lit);
 
         picked_lits.push_back(new_picked_lit);
 
         auto update_result = this->update(new_picked_lit);
-        this->graph->construct(pure_literal_with_clause);
+        this->graph->pick_var(reason, pure_lit);
+        // this->debug();
 
         if (update_result.second) // Conflict encountered
         {
@@ -125,7 +131,7 @@ std::pair<std::vector<Assign>, bool> CDCL::unit_propogation()
 
     } while (!conflict);
 
-    return std::pair(picked_lits, conflict);
+    return conflict;
 }
 
 std::pair<ClauseWrapper*, bool> CDCL::update(Assign assign, bool do_return)
@@ -189,6 +195,7 @@ void CDCL::init(CNF* cnf)
         this->assignment.push_back(Assign{i, Value::Free});
 
     this->vars_contained_clause.resize(this->origin_cnf->variable_number + 1);
+    this->vars_rank.resize(this->origin_cnf->variable_number + 1);
 
     for (auto c : origin_cnf->clauses)
         this->add_clause(new ClauseWrapper(c, this), this->clause);
@@ -286,78 +293,66 @@ void ImpGraph::init(CDCL* cdcl)
 {
     this->cdcl = cdcl;
 
-    this->map_from_vars_to_nodes.resize(cdcl->origin_cnf->variable_number + 1,
-                                        nullptr);
+    this->vars_to_nodes.resize(cdcl->origin_cnf->variable_number + 1);
+    this->assigned_order.resize(cdcl->origin_cnf->variable_number + 1);
+    this->trail.resize(1);
     return;
 }
 
-void ImpGraph::construct(std::pair<ClauseWrapper*, Literal*> propagated_literal)
+void ImpGraph::pick_var(ClauseWrapper* reason, Literal* picked_lit)
 {
     int rank = 0;
-    auto& [clause, lit] = propagated_literal;
-    Assign* assign = &(this->cdcl->assignment.at(lit->index));
+    Assign* assign = &(this->cdcl->assignment.at(picked_lit->index));
     ImpNode* conclusion; //= this->add_node(assign, rank);
 
-    if (clause ==
-        nullptr) // The variable is randomly picked, no cluase can derive to it.
+    if (reason == nullptr) // The variable is picked because UP can't be
+                           // furthered, no cluase can derive it.
     {
         rank = this->cdcl->pick_stack.size();
         conclusion = this->add_node(assign, rank);
+        this->cdcl->vars_rank.at(picked_lit->index) = rank;
+        this->assigned_order.at(picked_lit->index) = 1;
+        this->trail.push_back(std::vector<ImpNode*>(1, conclusion));
         return;
     }
 
-    conclusion = new ImpNode;
-    conclusion->assign = assign;
-    conclusion->rank = 0;
+    for (auto lit : reason->clause->literals)
+    {
+        if (lit != picked_lit)
+        {
+            rank = std::max(rank, this->cdcl->vars_rank.at(lit->index));
+        }
+    }
+    conclusion = this->add_node(assign, rank);
 
-    if (clause->clause->literals.size() == 1)
-        this->add_rel(nullptr, conclusion, clause);
-    else
-        for (auto clause_lit : clause->clause->literals)
-            if (clause_lit != lit)
-            {
-                auto premise =
-                    this->map_from_vars_to_nodes.at(clause_lit->index);
-                this->add_rel(premise, conclusion, clause);
-                conclusion->rank = std::max(conclusion->rank, premise->rank);
-            }
+    for (auto lit : reason->clause->literals)
+        if (lit != picked_lit)
+        {
+            ImpNode* premise = this->vars_to_nodes.at(lit->index);
+            this->add_reason(premise, conclusion, reason);
+        }
 
-    if (conclusion->rank)
-        conclusion->rank = this->cdcl->pick_stack.size(),
-        this->nodes.push_back(conclusion);
+    this->cdcl->vars_rank.at(picked_lit->index) = rank;
+    if (this->trail.size() > rank)
+        this->trail.at(rank).push_back(conclusion);
     else
-        this->fixed_var_nodes.push_back(conclusion);
-    this->map_from_vars_to_nodes.at(conclusion->assign->variable_index) =
-        conclusion;
+    {
+        {
+            std::cout << "ImpGraph::pick_var: Skipped rank found" << std::endl;
+            abort();
+        }
+    }
+
+    this->assigned_order.at(picked_lit->index) = this->trail.at(rank).size();
+
     return;
 }
 
 ImpNode* ImpGraph::add_node(Assign* assign, int rank)
 {
-    ImpNode* node = new ImpNode;
-    node->assign = assign;
-    node->rank = rank;
-    this->map_from_vars_to_nodes[assign->variable_index] = node;
-    if (rank > 0)
-        this->nodes.push_back(node);
-    else
-        this->fixed_var_nodes.push_back(node);
-    return node;
-}
-
-ImpRelation* ImpGraph::add_rel(ImpNode* premise, ImpNode* conclusion,
-                               ClauseWrapper* clause)
-{
-    ImpRelation* rel = new ImpRelation;
-    rel->premise = premise;
-    rel->conclusion = conclusion;
-    rel->relation_clause = clause->clause;
-
-    this->relations.push_back(rel);
-    if (premise != nullptr) premise->relation.push_back(rel);
-    if (conclusion != nullptr) conclusion->relation.push_back(rel);
-
-    return rel;
+    this->vars_to_nodes.at(assign->variable_index) =
+        new ImpNode(assign, rank, rank == 0);
+    return this->vars_to_nodes.at(assign->variable_index);
 }
 
 Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
@@ -366,18 +361,21 @@ Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
     learned_clause->cnf = this->cdcl->cdcl_cnf;
     learned_clause->index = this->cdcl->conflict_clause.size();
 
-    std::queue<ImpNode*>
-        queue; // queue stores all current nodes while toposorting
-    std::map<int, bool>
-        variable_in_learned_clause; // It is possible to pass the same node
-                                    // during the toposorting, thus it is
-                                    // nesscary to use map to reduct the
-                                    // them.
+    auto cmp = [this](ImpNode* lhs, ImpNode* rhs) -> bool {
+        return assigned_order.at(lhs->get_var_index()) <
+               assigned_order.at(rhs->get_var_index());
+    };
+
+    std::priority_queue<ImpNode*, std::vector<ImpNode*>, decltype(cmp)> queue(
+        cmp);
+
+    std::map<int, bool> vars_appearance;
+
+    int decision_rank = 0;
+
     for (auto lit : conflict_clause->clause->literals)
-    // Go through the clause that cause the
-    // conflict and push them to the queue
     {
-        auto node = map_from_vars_to_nodes.at(lit->index);
+        auto node = vars_to_nodes.at(lit->index);
         if (node == nullptr)
         {
             std::cout
@@ -385,27 +383,42 @@ Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
                 << std::endl;
             abort();
         }
-        queue.push(node);
+        decision_rank = std::max(decision_rank, node->get_rank());
     }
+    if (!decision_rank) return learned_clause;
 
+    for (auto lit : conflict_clause->clause->literals)
+    {
+        auto node = vars_to_nodes.at(lit->index);
+        if (node->get_rank() == decision_rank)
+        {
+            queue.push(node);
+        }
+        else
+            vars_appearance[node->get_var_index()] = 1;
+    }
     while (!queue.empty())
     {
-        auto node = queue.front();
+        if (queue.size() == 1) break;
+        auto node = queue.top();
         queue.pop();
-        bool node_has_premise = false;
-
-        for (auto rel : node->relation)
-            if (rel->conclusion == node)
+        for (auto reason : node->get_in_node())
+        {
+            if (reason == nullptr)
             {
-                if (rel->premise != nullptr) queue.push(rel->premise);
-                node_has_premise = true;
+                std::cout
+                    << "ImpGraph::conflict_clause_gen: Nullptr encountered."
+                    << std::endl;
+                abort();
             }
-
-        if (!node_has_premise)
-            variable_in_learned_clause[node->assign->variable_index] = true;
+            if (reason->get_rank() == decision_rank)
+                queue.push(reason);
+            else
+                vars_appearance[reason->get_var_index()] = 1;
+        }
     }
 
-    for (auto pair : variable_in_learned_clause)
+    for (auto pair : vars_appearance)
     {
         auto var = pair.first;
         Literal* lit = this->cdcl->cdcl_cnf->insert_literal(
@@ -414,56 +427,84 @@ Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
         learned_clause->literals.push_back(lit);
     }
 
+    int fuip = queue.top()->get_var_index();
+    Literal* lit = this->cdcl->cdcl_cnf->insert_literal(
+        fuip, this->cdcl->assignment[fuip].value == Value::True);
+    learned_clause->literals.push_back(lit);
+
     return learned_clause;
 }
 
 void ImpGraph::drop_to(int rank)
 {
-    auto rel = this->relations.end() - 1;
-    for (; rel >= this->relations.begin(); rel--)
+    if (this->trail.end() - this->trail.begin() <= rank) return;
+    auto trail_back = this->trail.end() - 1;
+    // Memory Leak Probability Here.
+    while (trail_back - this->trail.begin() >= rank)
     {
-        if ((*rel)->conclusion->rank < rank) break;
-        if ((*rel)->premise != nullptr) (*rel)->premise->relation.pop_back();
-        delete (*rel);
+        for (auto node = (*trail_back).rbegin(); node != (*trail_back).rend();
+             node++)
+        {
+            Assign deassign;
+            deassign.value = Value::Free;
+            deassign.variable_index = (*node)->get_assign()->variable_index;
+            this->cdcl->update(deassign);
+
+            this->vars_to_nodes[(*node)->get_var_index()] = nullptr;
+            (*node)->drop();
+        }
+        trail_back--;
     }
-    relations.resize(rel - relations.begin() + 1);
+    trail.resize(rank);
+    return;
+}
 
-    auto node = this->nodes.end() - 1;
-    Assign deassign;
-    deassign.value = Value::Free;
-    for (; node >= this->nodes.begin(); node--)
-    {
-        if ((*node)->rank < rank) break;
-        map_from_vars_to_nodes.at((*node)->assign->variable_index) = nullptr;
-        deassign.variable_index = (*node)->assign->variable_index;
-
-        this->cdcl->update(deassign, false);
-
-        delete (*node);
-    }
-    nodes.resize(node - nodes.begin() + 1);
+void ImpGraph::add_reason(ImpNode* premise, ImpNode* conclusion,
+                          ClauseWrapper* reason)
+{
+    if (premise != nullptr)
+        premise->out_node.push_back(conclusion),
+            premise->out_reason.push_back(reason);
+    conclusion->in_node.push_back(premise);
+    conclusion->in_reason.push_back(reason);
     return;
 }
 
 void ImpGraph::drop()
 {
-    for (auto n : this->nodes) n->drop();
-    for (auto n : this->fixed_var_nodes) n->drop();
-    for (auto r : this->relations) r->drop();
-    this->nodes.reserve(0);
-    this->fixed_var_nodes.reserve(0);
-    this->relations.reserve(0);
-    this->map_from_vars_to_nodes.reserve(0);
+    for (auto node : this->vars_to_nodes)
+        if (node != nullptr) node->drop();
     delete this;
     return;
 }
 
 void ImpNode::drop()
 {
-    this->relation.reserve(0);
+    for (auto node : in_node)
+        if (node != nullptr)
+        {
+            node->out_node.pop_back();
+            node->out_reason.pop_back();
+        }
     delete this;
     return;
 }
+
+ImpNode::ImpNode(Assign* assign, int rank, bool fixed)
+{
+    this->assign = assign;
+    this->rank = rank;
+    this->fixed = fixed;
+    return;
+}
+
+int ImpNode::get_rank() { return this->rank; }
+
+int ImpNode::get_var_index() { return this->assign->variable_index; };
+
+Assign* ImpNode::get_assign() { return this->assign; }
+
+const std::vector<ImpNode*>& ImpNode::get_in_node() { return this->in_node; }
 
 void ImpRelation::drop()
 {
@@ -494,23 +535,27 @@ void ClauseWrapper::debug()
     return;
 }
 
+void ImpNode::debug()
+{
+    std::cout << "Node Variable Index: " << assign->variable_index
+              << "   Truth Value:" << to_string(assign->value).substr(7)
+              << std::endl;
+    for (int index = 0; index < out_node.size(); index++)
+    {
+        std::cout << " -- Clause " << out_reason.at(index)->clause->index
+                  << " -> "
+                  << "Variable " << out_node.at(index)->assign->variable_index
+                  << std::endl;
+    }
+    std::cout << "Rank :" << rank << std::endl;
+    return;
+}
+
 void ImpGraph::debug()
 {
-    for (auto node : this->nodes)
+    for (auto node : this->vars_to_nodes)
     {
-        std::cout << "Node Variable Index: " << node->assign->variable_index
-                  << "   Truth Value:"
-                  << to_string(node->assign->value).substr(7) << std::endl;
-        for (auto rel : node->relation)
-            if (rel->premise == node)
-            {
-                std::cout << " -- Caause " << rel->relation_clause->index
-                          << " -> "
-                          << "Variable "
-                          << rel->conclusion->assign->variable_index
-                          << std::endl;
-            }
-        std::cout << "Rank :" << node->rank << std::endl << std::endl;
+        if (node != nullptr) node->debug(), std::cout << std::endl;
     }
     std::cout << std::endl;
     return;
@@ -537,6 +582,12 @@ void CDCL::debug()
 
 void CDCL::drop()
 {
+    if (this->graph != nullptr)
+    {
+        this->graph->drop();
+        this->graph = nullptr;
+    }
+
     this->satisfiable = this->solved = false;
     for (auto c : this->conflict_clause) c->drop();
     for (auto c : this->clause) c->drop();
@@ -546,12 +597,6 @@ void CDCL::drop()
 
     this->conflict_clause.clear();
     this->clause.clear();
-
-    if (this->graph != nullptr)
-    {
-        this->graph->drop();
-        this->graph = nullptr;
-    }
 
     this->assignment.clear();
     while (!pick_stack.empty()) pick_stack.pop();

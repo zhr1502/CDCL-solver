@@ -1,7 +1,7 @@
 obj = tmp/cdcl.o tmp/cnf.o
 vobj = tmp/verify.o
 makefile = Makefile
-flags = -Wall -g2 -O2 -std=c++17
+flags = -Wall -O3 -std=c++17
 
 bin/main: $(obj) tmp/main.o Makefile
 	g++ $(obj) tmp/main.o -o $@ $(flags)
