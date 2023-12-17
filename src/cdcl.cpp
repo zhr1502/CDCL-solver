@@ -1,9 +1,12 @@
 #include "cdcl.hpp"
-#include <cstdlib>
+#include <algorithm>
+#include <ratio>
 #include <vector>
 #include <iostream>
 #include <queue>
 #include <chrono>
+
+double update_time = 0;
 
 std::string to_string(const Value value)
 {
@@ -21,41 +24,48 @@ void CDCL::solve()
 
     srand(758926699);
     this->solved = true;
+    update_time = 0;
     auto up_result = this->unit_propogation();
     if (up_result)
         return; // Unit propagation when no variable is picked returns conflict,
                 // the CNF is not satisfiable.
+                //
+    int confl_cnt = 0, pick_cnt = 0;
     do
     {
         Literal* pick_lit = this->choose_variable();
         if (pick_lit == nullptr)
         {
             satisfiable = true;
+            std::cout << "Update Time: " << update_time << "ms" << std::endl;
             return;
         }
         Assign assign =
             Assign{pick_lit->index, rand() % 2 ? Value::False : Value::True};
         pick_stack.push(assign);
+        pick_cnt++;
 
-        this->update(assign);
         this->graph->pick_var(nullptr, pick_lit);
 
+        auto start = std::chrono::high_resolution_clock::now();
+        this->update(assign);
+        auto end = std::chrono::high_resolution_clock::now();
+        update_time += std::chrono::duration<double, std::milli>(end- start).count();
+
         auto up_result = this->unit_propogation();
-        // this->debug();
         while (up_result)
         {
             Assign deassign;
 
             auto last_conflict_clause = *(this->conflict_clause.end() - 1);
-            auto conflict_clause_last_lit =
-                *(last_conflict_clause->clause->literals.end() - 1);
+            auto conflict_fuip = last_conflict_clause->clause->literals.at(0);
 
             int unpick_to_rank;
 
             if (last_conflict_clause->clause->literals.size() == 1)
                 unpick_to_rank = 1;
             else
-                unpick_to_rank = vars_rank.at(conflict_clause_last_lit->index);
+                unpick_to_rank = vars_rank.at(conflict_fuip->index);
 
             while (pick_stack.size() >= unpick_to_rank)
             {
@@ -65,15 +75,33 @@ void CDCL::solve()
 
             this->graph->drop_to(unpick_to_rank);
 
+            unchecked_queue.push(
+                std::make_pair(last_conflict_clause->clause->literals[0],
+                               last_conflict_clause));
+
+            confl = nullptr;
+
             up_result = this->unit_propogation();
 
             if ((*(this->conflict_clause.end() - 1))->clause->literals.size() ==
                 0)
             {
+                std::cout << "Update Time: " << update_time << "ms" << std::endl;
                 satisfiable = false;
                 return;
             }
+            confl_cnt++;
         }
+        if (confl_cnt > 3000 && (double)pick_cnt / confl_cnt > 0.97)
+        {
+            confl_cnt = 0; pick_cnt = 0;
+            this->graph->drop_to(1);
+            while (!pick_stack.empty()) pick_stack.pop();
+            while (!unchecked_queue.empty()) unchecked_queue.pop();
+            for (int i = 1; i <= origin_cnf->variable_number; i++)
+                vars_rank[i] = 0;
+        }
+        // this->debug();
     } while (true);
 
     return;
@@ -82,44 +110,66 @@ void CDCL::solve()
 bool CDCL::unit_propogation()
 {
     std::vector<Assign> picked_lits;
-    Assign new_picked_lit;
+    Assign new_assign;
     bool conflict = false;
+
+    if (confl != nullptr) // Conflict encountered
+    {
+        // std::cout << "Starting to generating conflict clause" << std::endl;
+
+        Clause* learned_clause = this->graph->conflict_clause_gen(confl);
+
+        ClauseWrapper* learned_clause_wrapped =
+            new ClauseWrapper(learned_clause, this);
+
+        this->add_clause(learned_clause_wrapped, this->conflict_clause);
+        this->cdcl_cnf->clauses.push_back(learned_clause);
+        return true;
+    }
 
     do
     {
-        if (this->pickable_clause.empty()) break;
+        if (this->unchecked_queue.empty()) break;
 
-        auto reason = *pickable_clause.begin();
-        auto pure_lit = reason->find_pure_lit();
-        if (pure_lit == nullptr)
-        {
-            std::cout << "cdcl.cpp: CDCL::unit_propogation(): Should be able "
-                         "to find a pure lit but failed."
-                      << std::endl;
-            abort();
-        }
+        auto reason = unchecked_queue.front().second;
+        auto unit_lit = unchecked_queue.front().first;
+        unchecked_queue.pop();
 
-        new_picked_lit = Assign{pure_lit->index,
-                                pure_lit->is_neg ? Value::False : Value::True};
+        if (!reason->is_unit(unit_lit)) continue;
 
-        picked_lits.push_back(new_picked_lit);
+        new_assign = Assign{unit_lit->index,
+                            unit_lit->is_neg ? Value::False : Value::True};
 
-        auto update_result = this->update(new_picked_lit);
-        this->graph->pick_var(reason, pure_lit);
+        picked_lits.push_back(new_assign);
+
+        this->graph->pick_var(reason, unit_lit);
+
+        auto start = std::chrono::high_resolution_clock::now();
+        auto confl = this->update(new_assign);
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        update_time += std::chrono::duration<double, std::milli>(end- start).count();
         // this->debug();
 
-        if (update_result.second) // Conflict encountered
+        if (confl != nullptr) // Conflict encountered
         {
+            // std::cout << "Starting to generating conflict clause" <<
+            // std::endl;
             conflict = true;
 
-            Clause* learned_clause =
-                this->graph->conflict_clause_gen(update_result.first);
+            Clause* learned_clause = this->graph->conflict_clause_gen(confl);
 
             ClauseWrapper* learned_clause_wrapped =
                 new ClauseWrapper(learned_clause, this);
 
             this->add_clause(learned_clause_wrapped, this->conflict_clause);
             this->cdcl_cnf->clauses.push_back(learned_clause);
+            // this->debug();
+
+            if (learned_clause_wrapped->clause->index == 182)
+            {
+                // std::cout << "We're here!!!" << std::endl;
+            }
         }
 
     } while (!conflict);
@@ -127,36 +177,38 @@ bool CDCL::unit_propogation()
     return conflict;
 }
 
-std::pair<ClauseWrapper*, bool> CDCL::update(Assign assign, bool do_return)
+ClauseWrapper* CDCL::update(Assign assign)
 {
-    this->assignment[assign.variable_index] = assign;
-
-    for (auto c : this->vars_contained_clause.at(assign.variable_index))
-        if (c->update(assign) && do_return) return std::pair(c, true);
-
-    return std::pair(nullptr, false);
+    assignment.at(assign.variable_index) = assign;
+    auto res = vars.at(assign.variable_index).update_watchlist(assign);
+    if (res != nullptr) confl = res;
+    return res;
 }
 
 void CDCL::add_clause(ClauseWrapper* clause,
-                      std::vector<ClauseWrapper*>& clause_vec)
+                      std::vector<ClauseWrapper*>& clausedb)
 {
-    clause_vec.push_back(clause);
-    auto pos = clause->lits_value.begin();
-    for (auto l : clause->clause->literals)
+    clausedb.push_back(clause);
+    int siz = clause->clause->literals.size();
+    if (!siz) return;
+    if (siz == 1)
     {
-        this->vars_contained_clause.at(l->index).push_back(clause);
-        auto value = assignment.at(l->index).value;
-        if (value != Value::Free)
-        {
-            clause->picked_lits_number++;
-            clause->satisfied_lits_num +=
-                ((value == Value::True && !l->is_neg) ||
-                 (value == Value::False && l->is_neg));
-        }
-        (*pos) = value;
-        pos++;
+        unchecked_queue.push(
+            std::make_pair(clause->clause->literals.back(), clause));
     }
-    return;
+    else
+    {
+        Literal *f = clause->clause->literals.at(0),
+                *s = clause->clause->literals.at(1);
+
+        vars.at(f->index).watchlist_pushback(clause, s, f);
+        vars.at(s->index).watchlist_pushback(clause, f, s);
+        // add_clause have to ensure the first two literals in clause is also
+        // the first to be backtraced. This should be done when confl cls is
+        // generated, e.g. in CDCL::conflict_clause_gen()
+        // Is cdcl_cnf and origin_cnf should share some literal to avoid
+        // difference here?
+    }
 }
 
 Literal* CDCL::choose_variable()
@@ -172,7 +224,16 @@ Literal* CDCL::choose_variable()
     for (auto lit : origin_cnf->literals)
         if (lit->index == variable) return lit;
 
-    return this->cdcl_cnf->insert_literal(variable, false);
+    return this->insert_literal(variable, false);
+}
+
+Literal* CDCL::insert_literal(Variable var, bool is_neg)
+{
+    for (auto lit : origin_cnf->literals)
+    {
+        if (lit->is_neg == is_neg && lit->index == var) return lit;
+    }
+    return cdcl_cnf->insert_literal(var, is_neg);
 }
 
 void CDCL::init(CNF* cnf)
@@ -184,10 +245,12 @@ void CDCL::init(CNF* cnf)
     conflict_cnf->variable_number = cnf->variable_number;
     this->cdcl_cnf = conflict_cnf;
 
-    for (int i = 0; i <= cnf->variable_number; i++)
-        this->assignment.push_back(Assign{i, Value::Free});
+    this->vars.reserve(cnf->variable_number + 1);
 
-    this->vars_contained_clause.resize(this->origin_cnf->variable_number + 1);
+    for (int i = 0; i <= cnf->variable_number; i++)
+        assignment.push_back(Assign{i, Value::Free}),
+            vars.push_back(VariableWrapper(i, this));
+
     this->vars_rank.resize(this->origin_cnf->variable_number + 1);
 
     for (auto c : origin_cnf->clauses)
@@ -201,85 +264,198 @@ void CDCL::init(CNF* cnf)
     return;
 }
 
-Literal* ClauseWrapper::find_pure_lit()
+ClauseWrapper::ClauseWrapper(Clause* raw, CDCL* owner)
 {
-    if (satisfied_lits_num ||
-        picked_lits_number != this->clause->literals.size() - 1)
-        return nullptr;
-    int index = 0;
-    for (auto lits = this->lits_value.begin(); lits != this->lits_value.end();
-         lits++, index++)
-        if (*lits == Value::Free)
-        {
-            return this->clause->literals[index];
-        }
-    std::cout
-        << "ClauseWrapper::find_pure_lit(): should be able to find a pure "
-           "literal but failed"
-        << std::endl;
-    abort();
-}
-
-ClauseWrapper::ClauseWrapper(Clause* clause, CDCL* cdcl)
-{
-    this->clause = clause;
-    this->cdcl = cdcl;
-    this->lits_value.resize(this->clause->literals.size());
-
-    int index = 0;
-    for (auto c : this->clause->literals) lits_pos[c->index] = index++;
-
+    cdcl = owner;
+    clause = raw;
+    // Randomize watch literals
     return;
 }
 
-bool ClauseWrapper::update(Assign assign)
+Literal* ClauseWrapper::get_blocker(Variable watcher)
 {
-    auto f = this->lits_pos.find(assign.variable_index);
-    if (f != this->lits_pos.end())
-    {
-        bool pickable_before =
-            (!satisfied_lits_num &&
-             picked_lits_number == clause->literals.size() - 1);
-        auto id = f->second;
-        auto origin_value = this->lits_value.at(id);
-        if (origin_value != assign.value)
-        {
-            if (origin_value == Value::Free && assign.value != Value::Free)
-                picked_lits_number++;
-            else if (origin_value != Value::Free && assign.value == Value::Free)
-                picked_lits_number--;
+    if (clause->literals.size() == 1) return clause->literals[0];
 
-            bool is_neg = this->clause->literals.at(id)->is_neg;
-
-            int is_satisfied_before =
-                ((origin_value == Value::False && is_neg) ||
-                 (origin_value == Value::True && !is_neg));
-            int is_satisfied_after =
-                ((assign.value == Value::False && is_neg) ||
-                 (assign.value == Value::True && !is_neg));
-
-            satisfied_lits_num += is_satisfied_after - is_satisfied_before;
-        }
-        this->lits_value.at(id) = assign.value;
-        bool pickable_after =
-            (!satisfied_lits_num &&
-             picked_lits_number == clause->literals.size() - 1);
-
-        if (pickable_after && !pickable_before)
-            this->cdcl->pickable_clause.insert(this);
-        if (!pickable_after && pickable_before)
-            this->cdcl->pickable_clause.erase(this);
-    }
-
-    return (!satisfied_lits_num &&
-            picked_lits_number == clause->literals.size());
+    return clause->literals.at(clause->literals[0]->index == watcher);
 }
 
 void ClauseWrapper::drop()
 {
-    lits_value.reserve(0);
-    lits_pos.clear();
+    // lits_value should be deprecated here!!!.
+    // lits_pos.clear();
     delete this;
+}
+
+Literal* ClauseWrapper::update_watcher(Variable watcher)
+{
+    if (clause->literals.size() == 1) return nullptr;
+
+    Literal*& origin =
+        clause->literals[clause->literals.at(0)->index != watcher];
+
+    auto get_lit_value = [this](Literal* x) {
+        auto var_value = cdcl->assignment.at(x->index).value;
+        if (var_value == Value::Free) return Value::Free;
+        if (x->is_neg)
+            return var_value == Value::False ? Value::True : Value::False;
+        return var_value;
+    };
+
+    Literal* new_watcher = origin;
+    bool found = 0;
+
+    int watcher_rank = cdcl->vars_rank.at(watcher);
+    for (int i = 2; i < clause->literals.size(); i++)
+    {
+        auto lit = clause->literals[i];
+        if (get_lit_value(lit) != Value::False)
+        {
+            new_watcher = clause->literals[i];
+            std::swap(clause->literals[i], origin);
+
+            found = 1;
+            break;
+        }
+    }
+
+    if (!found)
+    {
+        int max_rank = watcher_rank, pos = -1;
+
+        for (int i = 2; i < clause->literals.size(); i++)
+        {
+            auto var = clause->literals[i]->index;
+            if (cdcl->vars_rank.at(var) > max_rank)
+            {
+                pos = i;
+                max_rank = cdcl->vars_rank.at(var);
+            }
+        }
+
+        if (pos != -1)
+        {
+            new_watcher = clause->literals.at(pos);
+            std::swap(clause->literals[pos], origin);
+        }
+    }
+
+    return new_watcher;
+}
+
+bool ClauseWrapper::is_unit(Literal* watcher)
+{
+    auto get_lit_value = [this](Literal* x) {
+        auto var_value = cdcl->assignment.at(x->index).value;
+        if (var_value == Value::Free) return Value::Free;
+        if (x->is_neg)
+            return var_value == Value::False ? Value::True : Value::False;
+        return var_value;
+    };
+
+    if (clause->literals.size() == 1 && get_lit_value(watcher) == Value::Free)
+        return true;
+
+    if (clause->literals[0] != watcher && clause->literals[1] != watcher)
+        return false;
+
+    auto blocker = clause->literals[clause->literals[0] == watcher];
+
+    return get_lit_value(watcher) == Value::Free &&
+           get_lit_value(blocker) == Value::False;
+}
+
+VariableWrapper::VariableWrapper(Variable index, CDCL* owner)
+    : var(index), cdcl(owner)
+{
+}
+
+std::list<ClauseWrapper*>& VariableWrapper::get_watchlist(Assign assign)
+{
+    if (assign.value == Value::False) return pos_watcher;
+    if (assign.value == Value::True) return neg_watcher;
+    std::cout << "VariableWrapper::get_watchlist(): Assign of Free found."
+              << std::endl;
+    abort();
+}
+
+void VariableWrapper::watchlist_pushback(ClauseWrapper* clause,
+                                         Literal* blocker, Literal* self)
+{
+    if (self->is_neg)
+    {
+        auto it = neg_watcher.begin();
+        for (; it != neg_watcher.end(); it++)
+            if (*it == clause)
+            {
+                std::cout << "Multiple clause found: " << var << " of clause "
+                          << clause->clause->index << std::endl;
+                abort();
+            }
+        neg_watcher.push_back(clause);
+    }
+    else
+    {
+        auto it = pos_watcher.begin();
+        for (; it != pos_watcher.end(); it++)
+            if (*it == clause)
+            {
+                std::cout << "Multiple clause found: " << var << " of clause "
+                          << clause->clause->index << std::endl;
+                abort();
+            }
+        pos_watcher.push_back(clause);
+    }
+
+    return;
+}
+
+Value VariableWrapper::get_value() { return cdcl->assignment.at(var).value; }
+
+ClauseWrapper* VariableWrapper::update_watchlist(Assign assign)
+{
+    ClauseWrapper* confl = nullptr;
+    if (assign.value == Value::Free) return confl;
+
+    auto& updlist = get_watchlist(assign);
+    auto it = updlist.begin();
+
+    auto get_lit_value = [this](Literal* x) {
+        auto var_value = cdcl->assignment.at(x->index).value;
+        if (var_value == Value::Free) return Value::Free;
+        if (x->is_neg)
+            return var_value == Value::False ? Value::True : Value::False;
+        return var_value;
+    };
+
+    while (it != updlist.end())
+    {
+        // watcher& w = *it;
+        ClauseWrapper* clause = *it;
+        Literal* blocker = clause->get_blocker(var);
+        Literal* watcher = clause->get_blocker(blocker->index);
+
+        Literal* new_watch_var = clause->update_watcher(var);
+
+        if (get_lit_value(new_watch_var) == Value::False)
+        {
+            if (get_lit_value(blocker) == Value::False)
+                confl = clause;
+            else
+                cdcl->unchecked_queue.push(std::make_pair(blocker, clause));
+        }
+
+        if (new_watch_var == watcher)
+            it++;
+        else
+        {
+            it = updlist.erase(it);
+
+            cdcl->vars.at(new_watch_var->index)
+                .watchlist_pushback(clause, blocker, new_watch_var);
+        }
+    }
+
+    return confl;
 }
 
 void ImpGraph::init(CDCL* cdcl)
@@ -310,18 +486,22 @@ void ImpGraph::pick_var(ClauseWrapper* reason, Literal* picked_lit)
     }
 
     for (auto lit : reason->clause->literals)
-    {
         if (lit != picked_lit)
         {
             rank = std::max(rank, this->cdcl->vars_rank.at(lit->index));
         }
-    }
+
     conclusion = this->add_node(assign, rank);
 
     for (auto lit : reason->clause->literals)
         if (lit != picked_lit)
         {
             ImpNode* premise = this->vars_to_nodes.at(lit->index);
+            if (premise == nullptr)
+            {
+                std::cout << "Nullptr Encountered !!!! "
+                          << reason->clause->index << std::endl;
+            }
             this->add_reason(premise, conclusion, reason);
         }
 
@@ -330,10 +510,8 @@ void ImpGraph::pick_var(ClauseWrapper* reason, Literal* picked_lit)
         this->trail.at(rank).push_back(conclusion);
     else
     {
-        {
-            std::cout << "ImpGraph::pick_var: Skipped rank found" << std::endl;
-            abort();
-        }
+        std::cout << "ImpGraph::pick_var: Skipped rank found" << std::endl;
+        abort();
     }
 
     this->assigned_order.at(picked_lit->index) = this->trail.at(rank).size();
@@ -350,6 +528,17 @@ ImpNode* ImpGraph::add_node(Assign* assign, int rank)
 
 Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
 {
+    // std::cout << "Generating new clause ... Reason: "
+    //           << (conflict_clause->clause->cnf == cdcl->origin_cnf
+    //                   ? ""
+    //                   : "(Conflict CDCL) ")
+    //           << conflict_clause->clause->index << std::endl;
+
+    if (conflict_clause->clause->index == 60)
+    {
+        // std::cout << "We are here!" << std::endl;
+    }
+
     Clause* learned_clause = new Clause; // Create a new raw clause
     learned_clause->cnf = this->cdcl->cdcl_cnf;
     learned_clause->index = this->cdcl->conflict_clause.size();
@@ -380,6 +569,9 @@ Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
     }
     if (!decision_rank) return learned_clause;
 
+    int blocker = -1;
+    std::pair<int, int> lastest(0, 0);
+
     for (auto lit : conflict_clause->clause->literals)
     {
         auto node = vars_to_nodes.at(lit->index);
@@ -388,7 +580,16 @@ Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
             queue.push(node);
         }
         else
+        {
+            auto order = std::make_pair(
+                node->get_rank(), assigned_order.at(node->get_var_index()));
+            if (order > lastest)
+            {
+                lastest = order;
+                blocker = node->get_var_index();
+            }
             vars_appearance[node->get_var_index()] = 1;
+        }
     }
     while (!queue.empty())
     {
@@ -407,23 +608,51 @@ Clause* ImpGraph::conflict_clause_gen(ClauseWrapper* conflict_clause)
             if (reason->get_rank() == decision_rank)
                 queue.push(reason);
             else
+            {
                 vars_appearance[reason->get_var_index()] = 1;
+                auto order =
+                    std::make_pair(reason->get_rank(),
+                                   assigned_order.at(reason->get_var_index()));
+                if (order > lastest)
+                {
+                    lastest = order;
+                    blocker = reason->get_var_index();
+                }
+            }
         }
     }
+
+    Literal* sec_watcher = nullptr;
 
     for (auto pair : vars_appearance)
     {
         auto var = pair.first;
-        Literal* lit = this->cdcl->cdcl_cnf->insert_literal(
+        Literal* lit = this->cdcl->insert_literal(
             var, this->cdcl->assignment[var].value == Value::True);
+
+        if (lit->index == blocker)
+        {
+            sec_watcher = lit;
+            continue;
+        }
 
         learned_clause->literals.push_back(lit);
     }
 
     int fuip = queue.top()->get_var_index();
-    Literal* lit = this->cdcl->cdcl_cnf->insert_literal(
+    Literal* lit = this->cdcl->insert_literal(
         fuip, this->cdcl->assignment[fuip].value == Value::True);
     learned_clause->literals.push_back(lit);
+
+    std::swap(learned_clause->literals.back(),
+              learned_clause->literals.front());
+
+    if (sec_watcher != nullptr)
+    {
+        learned_clause->literals.push_back(sec_watcher);
+        std::swap(learned_clause->literals.at(1),
+                  learned_clause->literals.back());
+    }
 
     return learned_clause;
 }
@@ -511,20 +740,17 @@ void ClauseWrapper::debug()
     std::cout << "Clause " << clause->index << ":\n";
 
     auto literal = this->clause->literals.begin();
-    auto literal_value = this->lits_value.begin();
-
-    for (; literal != this->clause->literals.end() &&
-           literal_value != this->lits_value.end();
-         literal_value++, literal++)
+    for (; literal != this->clause->literals.end(); literal++)
     {
         std::cout << "Variable " << (*literal)->index
                   << ((*literal)->is_neg ? " (Negatived) : "
                                          : "             : ");
-        std::cout << to_string(*literal_value) << std::endl;
+        std::cout << to_string(cdcl->assignment[(*literal)->index].value)
+                  << std::endl;
     }
 
-    std::cout << "Satisfied: " << (satisfied_lits_num ? "True" : "False")
-              << std::endl;
+    // std::cout << "Satisfied: " << (satisfied_lits_num ? "True" : "False")
+    //           << std::endl;
     return;
 }
 
@@ -557,10 +783,10 @@ void ImpGraph::debug()
 void CDCL::debug()
 {
     std::cout << "============CDCL Object Debug Info=============" << std::endl;
-    std::cout << "Assignment for variables:" << std::endl;
-    for (auto assign : assignment)
-        std::cout << "Variable " << assign.variable_index << " -> "
-                  << to_string(assign.value) << std::endl;
+    // std::cout << "Assignment for variables:" << std::endl;
+    // for (auto assign : assignment)
+    //     std::cout << "Variable " << assign.variable_index << " -> "
+    //               << to_string(assign.value) << std::endl;
 
     std::cout << std::endl << "Learned Conflict Clauses:" << std::endl;
     for (auto c : conflict_clause) c->debug();
@@ -585,14 +811,14 @@ void CDCL::drop()
     for (auto c : this->conflict_clause) c->drop();
     for (auto c : this->clause) c->drop();
 
-    this->vars_contained_clause.clear();
-    this->pickable_clause.clear();
-
     this->conflict_clause.clear();
     this->clause.clear();
 
     this->assignment.clear();
     while (!pick_stack.empty()) pick_stack.pop();
+    while (!unchecked_queue.empty()) unchecked_queue.pop();
+    vars.clear();
+    confl = nullptr;
 
     if (this->cdcl_cnf != nullptr) this->cdcl_cnf->drop();
     delete this->cdcl_cnf;

@@ -1,11 +1,16 @@
+#pragma once
 #include "cnf.hpp"
 #include <iterator>
 #include <vector>
 #include <map>
 #include <stack>
 #include <set>
+#include <list>
+#include <queue>
 
 struct ClauseWrapper;
+
+class VariableWrapper;
 
 class ImpNode;
 
@@ -16,6 +21,10 @@ class ImpGraph;
 struct Assign;
 
 struct CDCL;
+
+using Variable = int;
+
+using watcher = std::pair<ClauseWrapper *, Literal *>;
 
 enum Value
 // Value: Possible value of a variable
@@ -32,20 +41,26 @@ struct Assign
     Value value;        // The value of the variable
 };
 
+class VariableWrapper
+{
+    Variable var;
+    CDCL *cdcl;
+    std::list<ClauseWrapper *> pos_watcher, neg_watcher;
+
+public:
+    VariableWrapper(Variable, CDCL *);
+    ClauseWrapper *update_watchlist(Assign);
+    std::list<ClauseWrapper *> &get_watchlist(Assign);
+    void watchlist_pushback(ClauseWrapper *, Literal *, Literal *);
+    Value get_value();
+};
+
 struct ClauseWrapper
 // ClauseWrapper: Object wraps a raw clause
 // that contains useful information in DCL solving
 {
     Clause *clause; // Pointing to raw clause
     CDCL *cdcl;
-    std::vector<Value> lits_value; // lits_value[index] indicate the current
-                                   // value of this->clause->literals[index]
-    std::map<int, int> lits_pos;   // Map from variable number to its index in
-                                   // this->clause->literals
-
-    int satisfied_lits_num = 0; // Is the clause satisfied currently
-    int picked_lits_number = 0; // Numbers of how many variables appeared in the
-                                // clause have been picked.
 
     /*
      * ClauseWrapper::find_pure_lit(): Find a pure literal in clause and return
@@ -53,7 +68,9 @@ struct ClauseWrapper
      * unsatisfied yet clause Return Value: ptr to the literal when pure literal
      * exists. Otherwise nullptr
      */
-    Literal *find_pure_lit();
+    Literal *update_watcher(Variable);
+
+    Literal *get_blocker(Variable);
 
     /*
      * ClauseWrapper::update():
@@ -66,7 +83,7 @@ struct ClauseWrapper
     bool update(Assign);
 
     /*
-     * ClauseWrapper::global_update():
+     * ClauseWrapper::global_update(): (not implemented yet!)
      * Update this.lits_value this.satisfied and this.picked_lits_number
      * according to the CDCL object given
      * This function is useful when to initialize a newly generated
@@ -75,9 +92,10 @@ struct ClauseWrapper
      */
     bool global_update(CDCL *);
 
+    bool is_unit(Literal *);
+
     ClauseWrapper(Clause *,
                   CDCL *); // Initialize a new ClauseWrapper with raw clause
-
     void drop();
 
     void debug();
@@ -203,17 +221,19 @@ struct CDCL
     CNF *origin_cnf = nullptr, *cdcl_cnf = nullptr;
     std::vector<ClauseWrapper *> conflict_clause;
     std::vector<ClauseWrapper *> clause;
+    std::vector<VariableWrapper> vars;
     std::vector<Assign> assignment;
     std::stack<Assign> pick_stack;
+    std::queue<std::pair<Literal *, ClauseWrapper *>> unchecked_queue;
 
-    std::vector<std::vector<ClauseWrapper *>> vars_contained_clause;
-    std::set<ClauseWrapper *> pickable_clause;
     std::vector<int> vars_rank;
+
+    ClauseWrapper *confl = nullptr;
 
     ImpGraph *graph = nullptr;
     bool satisfiable = false, solved = false;
     // variable CDCL::solved will be set true when CDCL::solve() is called
-    // CDCL::satisfiable <= CDCL::solved
+    // CDCL::satisfiable implies CDCL::solved
 
     void solve();
     /*
@@ -226,7 +246,7 @@ struct CDCL
      * If conflict is encountered then return pair<ptr to conflict clause, true>
      * Else return pair<nullptr, false>
      */
-    std::pair<ClauseWrapper *, bool> update(Assign, bool = true);
+    ClauseWrapper *update(Assign);
 
     /*
      * CDCL::add_clause(clause)
@@ -254,6 +274,8 @@ struct CDCL
      * ptr to the selected variable's literal
      */
     Literal *choose_variable();
+
+    Literal *insert_literal(Variable, bool);
     void init(CNF *);
 
     void debug();

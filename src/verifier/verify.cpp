@@ -34,6 +34,8 @@ int main()
         origin_cnf.from_DIMACS(&dimacs);
         cdcl->init(&origin_cnf);
 
+        if(iter == 58) cout << dstr << endl;
+
         auto start = std::chrono::high_resolution_clock::now();
         cdcl->solve();
         auto end = std::chrono::high_resolution_clock::now();
@@ -61,7 +63,7 @@ int main()
         if (duration_mili < min_time) min_time = duration_mili;
         total_time += duration_mili;
 
-        if (iter % 10 == 0)
+        if (iter % 1 == 0)
             cout << iter << " Assertions passed." << endl,
                 cout << "Time consume: " << duration_mili << "ms" << endl;
     }

@@ -3,3 +3,5 @@ tmp/
 .direnv/
 .cache/
 test/
+*.kdev4
+.kdev4
