@@ -383,26 +383,10 @@ void VariableWrapper::watchlist_pushback(ClauseWrapper* clause,
 {
     if (self->is_neg)
     {
-        auto it = neg_watcher.begin();
-        for (; it != neg_watcher.end(); it++)
-            if (*it == clause)
-            {
-                std::cout << "Multiple clause found: " << var << " of clause "
-                          << clause->clause->index << std::endl;
-                abort();
-            }
         neg_watcher.push_back(clause);
     }
     else
     {
-        auto it = pos_watcher.begin();
-        for (; it != pos_watcher.end(); it++)
-            if (*it == clause)
-            {
-                std::cout << "Multiple clause found: " << var << " of clause "
-                          << clause->clause->index << std::endl;
-                abort();
-            }
         pos_watcher.push_back(clause);
     }
 

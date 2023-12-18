@@ -15,9 +15,13 @@ to enter the develop shell.
 #### Build from the source
 Use
 ```
-make all
+cmake -S . -B build
 ```
-and the binary will be generated as `bin/main`
+to configure the project. Then build it by
+```
+cmake --build build
+```
+The binary targets will be generated as `build/solver` and `build/verify`
 
 ### Usage
 Input the conjunctive normal form (CNF) in DIMACS format to the stdin.
@@ -26,7 +30,7 @@ Note that comments is not supported yet.
 
 #### Example
 ```
-[host@host:~]$ ./bin/main
+[host@host:~]$ ./build/solver
 p cnf 10 10
 1 4 -5 -7 0
 1 5 0
