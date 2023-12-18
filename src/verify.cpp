@@ -5,8 +5,11 @@
 #include <string>
 #include <chrono>
 #include <vector>
+#include <fstream>
 #include <cdcl/cdcl.hpp>
 #include <cdcl/cnf.hpp>
+#include <indicators/block_progress_bar.hpp>
+#include <indicators/cursor_control.hpp>
 
 using namespace std;
 const int MAX_VAR_NUMBER = 200 + 10;
@@ -41,18 +44,18 @@ inline bool check_once(CNF *origin, CNF *learned, int index)
 
     for (int i = 1; i <= origin->variable_number; i++) value[i] = Value::Free;
 
-    for (auto& l : learned->clauses.at(index).literals)
+    for (auto &l : learned->clauses.at(index).literals)
         value[l.index] = l.is_neg ? Value::True : Value::False;
 
     while (true)
     {
         bool new_lit_picked = 0;
-        for (auto& c : origin->clauses)
+        for (auto &c : origin->clauses)
         {
             bool satisfied = 0;
             int picked_number = 0;
             Literal *unpicked_lit = nullptr;
-            for (auto& l : c.literals)
+            for (auto &l : c.literals)
             {
                 if (value[l.index] == Value::Free)
                 {
@@ -156,8 +159,16 @@ int main()
 
     DIMACS dimacs;
     CNF origin_cnf;
-    double max_time = 0, min_time = 1.0 / 0.0, total_time = 0;
+    double max_time = 0, min_time = INFINITY, total_time = 0;
     int sat_number = 0, unsat_number = 0;
+
+    indicators::show_console_cursor(false);
+
+    using namespace indicators;
+    BlockProgressBar bar{
+        option::BarWidth{80}, option::ForegroundColor{Color::yellow},
+        option::FontStyles{std::vector<FontStyle>{FontStyle::bold}},
+        option::MaxProgress{N}};
 
     for (int iter = 1; iter <= N; iter++)
     {
@@ -177,9 +188,13 @@ int main()
 
         if (!result) // Assert: verify result should be true
         {
+            bar.set_option(option::ForegroundColor{Color::red});
+            ofstream outfile;
+            outfile.open("fail_input.in", ios::out | ios::trunc );
+            outfile << dstr << endl;
+
             cout << "Assertion Failed at test " << iter << endl;
-            cout << "Input: " << endl;
-            cout << dstr << endl;
+            cout << "Input data dumped in 'fail_input.in'" << endl;
             return -1;
         }
 
@@ -196,10 +211,15 @@ int main()
         if (duration_mili < min_time) min_time = duration_mili;
         total_time += duration_mili;
 
-        if (iter % 10 == 0)
-            cout << iter << " Assertions passed." << endl,
-                cout << "Time consume: " << duration_mili << "ms" << endl;
+        //if (iter % 10 == 0)
+        //    cout << iter << " Assertions passed." << endl,
+        //        cout << "Time consume: " << duration_mili << "ms" << endl;
+
+        bar.tick();
     }
+
+    bar.set_option(option::ForegroundColor{Color::green});
+    bar.mark_as_completed();
 
     cout << "All tests passed. No error reported." << endl;
 
