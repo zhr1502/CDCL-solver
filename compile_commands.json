@@ -2,61 +2,27 @@
   {
     "arguments": [
       "/nix/store/rj91g41smpmp92xvhx6rjxz6878bn2b4-gcc-wrapper-12.2.0/bin/g++",
+      "-I/home/zhr1502/project/CDCL-solver/src/cdcl/include",
       "-c",
-      "-g2",
-      "-Wall",
-      "-std=c++17",
       "-o",
-      "tmp/cdcl.o",
-      "src/cdcl.cpp"
+      "CMakeFiles/verify.dir/src/verify.cpp.o",
+      "/home/zhr1502/project/CDCL-solver/src/verify.cpp"
     ],
-    "directory": "/home/zhr1502/project/CDCL-solver",
-    "file": "/home/zhr1502/project/CDCL-solver/src/cdcl.cpp",
-    "output": "/home/zhr1502/project/CDCL-solver/tmp/cdcl.o"
+    "directory": "/home/zhr1502/project/CDCL-solver/build",
+    "file": "/home/zhr1502/project/CDCL-solver/src/verify.cpp",
+    "output": "/home/zhr1502/project/CDCL-solver/build/CMakeFiles/verify.dir/src/verify.cpp.o"
   },
   {
     "arguments": [
       "/nix/store/rj91g41smpmp92xvhx6rjxz6878bn2b4-gcc-wrapper-12.2.0/bin/g++",
+      "-I/home/zhr1502/project/CDCL-solver/src/cdcl/include",
       "-c",
-      "-g2",
-      "-Wall",
-      "-std=c++17",
       "-o",
-      "tmp/cnf.o",
-      "src/cnf.cpp"
+      "CMakeFiles/solver.dir/src/main.cpp.o",
+      "/home/zhr1502/project/CDCL-solver/src/main.cpp"
     ],
-    "directory": "/home/zhr1502/project/CDCL-solver",
-    "file": "/home/zhr1502/project/CDCL-solver/src/cnf.cpp",
-    "output": "/home/zhr1502/project/CDCL-solver/tmp/cnf.o"
-  },
-  {
-    "arguments": [
-      "/nix/store/rj91g41smpmp92xvhx6rjxz6878bn2b4-gcc-wrapper-12.2.0/bin/g++",
-      "-c",
-      "-g2",
-      "-Wall",
-      "-std=c++17",
-      "-o",
-      "tmp/main.o",
-      "src/main.cpp"
-    ],
-    "directory": "/home/zhr1502/project/CDCL-solver",
+    "directory": "/home/zhr1502/project/CDCL-solver/build",
     "file": "/home/zhr1502/project/CDCL-solver/src/main.cpp",
-    "output": "/home/zhr1502/project/CDCL-solver/tmp/main.o"
-  },
-  {
-    "arguments": [
-      "/nix/store/rj91g41smpmp92xvhx6rjxz6878bn2b4-gcc-wrapper-12.2.0/bin/g++",
-      "-c",
-      "-g2",
-      "-Wall",
-      "-std=c++17",
-      "-o",
-      "tmp/vertify.o",
-      "src/vertifier/vertify.cpp"
-    ],
-    "directory": "/home/zhr1502/project/CDCL-solver",
-    "file": "/home/zhr1502/project/CDCL-solver/src/vertifier/vertify.cpp",
-    "output": "/home/zhr1502/project/CDCL-solver/tmp/vertify.o"
+    "output": "/home/zhr1502/project/CDCL-solver/build/CMakeFiles/solver.dir/src/main.cpp.o"
   }
 ]

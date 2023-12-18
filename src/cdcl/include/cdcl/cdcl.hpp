@@ -1,6 +1,8 @@
 #pragma once
 #include "cnf.hpp"
 #include <iterator>
+#include <sstream>
+#include <valarray>
 #include <vector>
 #include <map>
 #include <stack>
@@ -22,9 +24,9 @@ struct Assign;
 
 struct CDCL;
 
-using Variable = int;
+struct CRef;
 
-using watcher = std::pair<ClauseWrapper *, Literal *>;
+using Variable = int;
 
 enum Value
 // Value: Possible value of a variable
@@ -41,26 +43,42 @@ struct Assign
     Value value;        // The value of the variable
 };
 
+class Lit
+{
+    int lit;
+
+public:
+    Lit(int, bool);
+    int get_var();
+    bool is_neg();
+
+    bool operator==(const Lit &a) { return a.lit == lit; }
+    bool operator!=(const Lit &a) { return a.lit != lit; }
+};
+
 class VariableWrapper
 {
     Variable var;
-    CDCL *cdcl;
-    std::list<ClauseWrapper *> pos_watcher, neg_watcher;
+    CDCL &cdcl;
+    std::list<CRef> pos_watcher, neg_watcher;
 
 public:
-    VariableWrapper(Variable, CDCL *);
-    ClauseWrapper *update_watchlist(Assign);
-    std::list<ClauseWrapper *> &get_watchlist(Assign);
-    void watchlist_pushback(ClauseWrapper *, Literal *, Literal *);
+    VariableWrapper(Variable, CDCL &);
+    CRef update_watchlist(Assign);
+    std::list<CRef> &get_watchlist(Assign);
+    void watchlist_pushback(CRef, Lit);
     Value get_value();
 };
+
+const Lit nullLit = Lit(0, true);
 
 struct ClauseWrapper
 // ClauseWrapper: Object wraps a raw clause
 // that contains useful information in DCL solving
 {
-    Clause *clause; // Pointing to raw clause
-    CDCL *cdcl;
+    int index;
+
+    std::vector<Lit> literals;
 
     /*
      * ClauseWrapper::find_pure_lit(): Find a pure literal in clause and return
@@ -68,9 +86,9 @@ struct ClauseWrapper
      * unsatisfied yet clause Return Value: ptr to the literal when pure literal
      * exists. Otherwise nullptr
      */
-    Literal *update_watcher(Variable);
+    Lit update_watcher(Variable, CDCL &);
 
-    Literal *get_blocker(Variable);
+    Lit get_blocker(Variable);
 
     /*
      * ClauseWrapper::update():
@@ -82,29 +100,54 @@ struct ClauseWrapper
      */
     bool update(Assign);
 
-    /*
-     * ClauseWrapper::global_update(): (not implemented yet!)
-     * Update this.lits_value this.satisfied and this.picked_lits_number
-     * according to the CDCL object given
-     * This function is useful when to initialize a newly generated
-     * conflict-clause, whose variable assignment do not align with CDCL
-     * object Return Value: Refer to update()
-     */
-    bool global_update(CDCL *);
+    bool is_unit(Lit, CDCL *);
 
-    bool is_unit(Literal *);
-
-    ClauseWrapper(Clause *,
-                  CDCL *); // Initialize a new ClauseWrapper with raw clause
+    ClauseWrapper(Clause &,
+                  int); // Initialize a new ClauseWrapper with raw clause
     void drop();
 
     void debug();
 };
 
+class ClauseDatabase
+{
+    friend class LRef;
+    friend class CRef;
+    std::vector<Lit> literal;
+    std::vector<ClauseWrapper> clause;
+
+public:
+    ClauseDatabase(CNF &);
+    void parse();
+    void add_clause(Clause);
+    CRef get_clause(int);
+    CRef get_last_cls();
+    int size();
+};
+
+struct CRef
+{
+    int cid;
+    ClauseDatabase &db;
+
+    CRef(int, ClauseDatabase &);
+    bool isnull();
+
+    ClauseWrapper &operator*() { return db.clause.at(cid); }
+    bool operator==(const CRef &a) { return cid == a.cid; }
+    bool operator!=(const CRef &a) { return cid != a.cid; }
+    void operator=(const CRef &a)
+    {
+        cid = a.cid;
+        db = a.db;
+        return;
+    }
+};
+
 class ImpRelation
 // ImpRelation: Object describe a edge in the CDCL's Implication graph
 {
-    Clause *relation_clause;
+    CRef relation_clause;
     // The clause according to which this->conclusion holds if this->premise
     // holds
     ImpNode *premise;
@@ -113,7 +156,7 @@ class ImpRelation
 public:
     void drop();
     ImpNode *get_conclusion(), *get_premise();
-    ImpRelation(ClauseWrapper *, ImpNode *, ImpNode *);
+    ImpRelation(CRef, ImpNode *, ImpNode *);
 };
 
 class ImpGraph
@@ -139,7 +182,7 @@ public:
      * The second is the newly assigned variable and the first is the clause by
      * which the variable's value is determined.
      */
-    void pick_var(ClauseWrapper *, Literal *);
+    void pick_var(CRef, Lit);
 
     /*
      * ImpGraph::add_node(assign, rank):
@@ -147,7 +190,7 @@ public:
      * Return Value:
      * ptr pointing to the node
      */
-    ImpNode *add_node(Assign *, int);
+    ImpNode *add_node(Assign, int);
 
     /*
      * ImpGraph::add_rel(premise, conclusion, clause):
@@ -167,7 +210,7 @@ public:
      * Return Value:
      * The generated raw clause
      */
-    Clause *conflict_clause_gen(ClauseWrapper *);
+    Clause conflict_clause_gen(CRef);
 
     /*
      * ImpGraph::drop_to(rank)
@@ -181,7 +224,7 @@ public:
      * drop all nodes and edges
      */
     void drop();
-    void add_reason(ImpNode *, ImpNode *, ClauseWrapper *);
+    void add_reason(ImpNode *, ImpNode *, CRef);
 
     void debug();
 };
@@ -190,10 +233,10 @@ class ImpNode
 // ImpNode: Object describe a node in the CDCL's Implication graph
 {
     std::vector<ImpNode *> in_node, out_node;
-    std::vector<ClauseWrapper *> in_reason, out_reason;
+    std::vector<CRef> in_reason, out_reason;
     // Set of edges. Either conclusion or premise in these ImpRelation objects
     // is self
-    Assign *assign;
+    Assign assign;
     int rank;
     // rank: describe when a node is generated
     // More accurately, the rank of a node depends on the number of the picked
@@ -203,12 +246,11 @@ class ImpNode
     bool fixed = false;
 
 public:
-public:
-    ImpNode(Assign *, int, bool = false);
-    friend void ImpGraph::add_reason(ImpNode *, ImpNode *, ClauseWrapper *);
+    ImpNode(Assign, int, bool = false);
+    friend void ImpGraph::add_reason(ImpNode *, ImpNode *, CRef);
     int get_rank();
     int get_var_index();
-    Assign *get_assign();
+    Assign get_assign();
 
     const std::vector<ImpNode *> &get_in_node();
 
@@ -218,22 +260,26 @@ public:
 
 struct CDCL
 {
-    CNF *origin_cnf = nullptr, *cdcl_cnf = nullptr;
-    std::vector<ClauseWrapper *> conflict_clause;
-    std::vector<ClauseWrapper *> clause;
+    int variable_number, clause_size;
+    ClauseDatabase clausedb;
     std::vector<VariableWrapper> vars;
     std::vector<Assign> assignment;
     std::stack<Assign> pick_stack;
-    std::queue<std::pair<Literal *, ClauseWrapper *>> unchecked_queue;
+    std::queue<std::pair<Lit, CRef>> unchecked_queue;
 
     std::vector<int> vars_rank;
 
-    ClauseWrapper *confl = nullptr;
+    CRef confl, nullCRef;
 
     ImpGraph *graph = nullptr;
     bool satisfiable = false, solved = false;
     // variable CDCL::solved will be set true when CDCL::solve() is called
     // CDCL::satisfiable implies CDCL::solved
+
+    CDCL(CNF &);
+    ~CDCL();
+
+    void analyze(CRef);
 
     void solve();
     /*
@@ -246,7 +292,7 @@ struct CDCL
      * If conflict is encountered then return pair<ptr to conflict clause, true>
      * Else return pair<nullptr, false>
      */
-    ClauseWrapper *update(Assign);
+    CRef update(Assign);
 
     /*
      * CDCL::add_clause(clause)
@@ -273,15 +319,16 @@ struct CDCL
      * Return Value:
      * ptr to the selected variable's literal
      */
-    Literal *choose_variable();
+    Lit choose_variable();
 
-    Literal *insert_literal(Variable, bool);
-    void init(CNF *);
+    Lit insert_literal(Variable, bool);
+
+    Value get_lit_value(Lit);
+    void init(CNF &);
 
     void debug();
 
-    void drop();
-
     void print();
     void print_dimacs();
+    void stream_dimacs(std::ostringstream &, std::ostringstream &);
 };

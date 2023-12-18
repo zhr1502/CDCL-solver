@@ -1,4 +1,4 @@
-#include "cnf.hpp"
+#include "include/cdcl/cnf.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -43,31 +43,32 @@ void DIMACS::from_stringstream(std::istream& istream)
     return;
 }
 
-void DIMACS::Input() {
+void DIMACS::Input()
+{
     this->from_stringstream(std::cin);
     return;
 }
 
-Literal::Literal(CNF* cnf, int index, bool is_neg)
+Literal::Literal(CNF* c, int idx, bool neg) : cnf(c)
 {
-    this->cnf = cnf;
-    this->index = index;
-    this->is_neg = is_neg;
+    index = idx;
+    is_neg = neg;
 };
 
-void Clause::from_str(CNF* cnf, std::string str)
+Clause::Clause(CNF* cnf, std::string str) : cnf(cnf)
 { /* todo */
     return;
 };
 
-void Clause::from_vec(CNF* cnf, std::vector<int>* clause)
+Clause::Clause(CNF* cnf, std::vector<int>& clause) : cnf(cnf)
 {
     this->index = cnf->clauses.size();
     this->cnf = cnf;
 
-    for (auto iter = clause->begin(); iter != clause->end(); iter++)
+    for (auto iter = clause.begin(); iter != clause.end(); iter++)
     {
-        auto pos = cnf->insert_literal(abs(*iter), *iter < 0);
+        // auto pos = cnf.insert_literal(abs(*iter), *iter < 0);
+        Literal pos(cnf, abs(*iter), *iter < 0);
 
         this->literals.push_back(pos);
     }
@@ -75,42 +76,27 @@ void Clause::from_vec(CNF* cnf, std::vector<int>* clause)
     return;
 }
 
-void CNF::from_DIMACS(DIMACS* src)
+Clause::Clause() : cnf(nullptr) {}
+
+void CNF::from_DIMACS(DIMACS& src)
 {
-    this->drop();
-    for (auto iter = src->clauses.begin(); iter != src->clauses.end(); iter++)
+    clauses.resize(0);
+    for (auto iter = src.clauses.begin(); iter != src.clauses.end(); iter++)
 
     {
-        Clause* clause = new Clause;
+        Clause clause(this, (*iter));
 
-        clause->from_vec(this, &(*iter));
         this->clauses.push_back(clause);
     }
 
-    this->variable_number = src->literal_num;
+    this->variable_number = src.literal_num;
 
     return;
 };
 
-Literal* CNF::insert_literal(int index, bool is_neg)
-{
-    auto pos = find_if(this->literals.begin(), this->literals.end(),
-                       [index, is_neg](Literal* lit) {
-                           return lit->index == index && lit->is_neg == is_neg;
-                       });
+CNF::CNF(DIMACS& d) { this->from_DIMACS(d); }
 
-    if (pos == this->literals.end()) // the given literal doesn't exist in CNF
-    {
-        auto lit = new Literal(this, index, is_neg);
-        this->literals.push_back(lit);
-
-        return *(this->literals.end() - 1);
-    }
-    else // the given literal already exists in CNF
-    {
-        return *pos;
-    }
-}
+CNF::CNF() {}
 
 void Literal::debug()
 {
@@ -124,9 +110,9 @@ void Clause::debug()
 {
     std::cout << "=============================================" << std::endl;
     std::cout << "Clauses: " << this->index << " With Literals:" << std::endl;
-    for (auto lit : this->literals)
+    for (auto& lit : this->literals)
     {
-        lit->debug();
+        lit.debug();
     }
     return;
 }
@@ -134,28 +120,6 @@ void Clause::debug()
 void CNF::debug()
 {
     std::cout << "CNF debug info:" << std::endl;
-    for (auto clause : this->clauses) clause->debug();
-    return;
-}
-
-void CNF::drop() {
-    for(auto c : this->clauses) c->drop();
-    for(auto l : this->literals) l->drop();
-    this->clauses.clear();
-    this->literals.clear();
-    this->clauses.reserve(0);
-    this->literals.reserve(0);
-    variable_number = 0;
-    return;
-}
-
-void Literal::drop() {
-    delete this;
-    return;
-}
-
-void Clause::drop() {
-    this->literals.reserve(0);
-    delete this;
+    for (auto clause : this->clauses) clause.debug();
     return;
 }
