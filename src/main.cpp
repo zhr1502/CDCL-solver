@@ -4,7 +4,7 @@
 int main()
 {
     DIMACS d;
-    d.Input();
+    d.input();
 
     CNF cnf(d);
 

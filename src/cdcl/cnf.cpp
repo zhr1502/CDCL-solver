@@ -1,9 +1,9 @@
 #include "include/cdcl/cnf.hpp"
 #include <algorithm>
-#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 void DIMACS::from_stringstream(std::istream& istream)
 {
@@ -43,7 +43,7 @@ void DIMACS::from_stringstream(std::istream& istream)
     return;
 }
 
-void DIMACS::Input()
+void DIMACS::input()
 {
     this->from_stringstream(std::cin);
     return;
@@ -55,6 +55,10 @@ Literal::Literal(CNF* c, int idx, bool neg) : cnf(c)
     is_neg = neg;
 };
 
+int Literal::get_var() { return index; }
+
+bool Literal::neg() { return is_neg; }
+
 Clause::Clause(CNF* cnf, std::string str) : cnf(cnf)
 { /* todo */
     return;
@@ -62,7 +66,8 @@ Clause::Clause(CNF* cnf, std::string str) : cnf(cnf)
 
 Clause::Clause(CNF* cnf, std::vector<int>& clause) : cnf(cnf)
 {
-    this->index = cnf->clauses.size();
+    if (cnf != nullptr) this->index = cnf->clause_size();
+    else this->index = 0;
     this->cnf = cnf;
 
     for (auto iter = clause.begin(); iter != clause.end(); iter++)
@@ -77,6 +82,14 @@ Clause::Clause(CNF* cnf, std::vector<int>& clause) : cnf(cnf)
 }
 
 Clause::Clause() : cnf(nullptr) {}
+
+Clause::Clause(const Clause& cls) : cnf(cls.cnf), index(cls.index)
+{
+    literals = cls.literals;
+    return;
+}
+
+std::vector<Literal>& Clause::get_literals() { return literals; }
 
 void CNF::from_DIMACS(DIMACS& src)
 {
@@ -94,9 +107,35 @@ void CNF::from_DIMACS(DIMACS& src)
     return;
 };
 
+int CNF::clause_size() { return clauses.size(); }
+
 CNF::CNF(DIMACS& d) { this->from_DIMACS(d); }
 
 CNF::CNF() {}
+
+int CNF::var_num() { return variable_number; }
+
+void CNF::push_back(Clause&& cls)
+{
+    clauses.push_back(cls);
+    return;
+}
+
+int CNF::size_of_clause(int idx)
+{
+    return clauses.at(idx).get_literals().size();
+}
+
+Clause CNF::copy_clause(int idx)
+{
+    Clause cpy(clauses.at(idx));
+    return cpy;
+}
+
+Literal CNF::locate(int cls, int lit)
+{
+    return clauses.at(cls).get_literals().at(lit);
+}
 
 void Literal::debug()
 {

@@ -42,41 +42,46 @@ inline bool check_once(CNF *origin, CNF *learned, int index)
 {
     static Value value[MAX_VAR_NUMBER];
 
-    for (int i = 1; i <= origin->variable_number; i++) value[i] = Value::Free;
+    for (int i = 1; i <= origin->var_num(); i++) value[i] = Value::Free;
 
-    for (auto &l : learned->clauses.at(index).literals)
-        value[l.index] = l.is_neg ? Value::True : Value::False;
+    for (int lit = 0; lit < learned->size_of_clause(index); lit++)
+    {
+        auto l = learned->locate(index, lit);
+        value[l.get_var()] = l.neg() ? Value::True : Value::False;
+    }
 
     while (true)
     {
         bool new_lit_picked = 0;
-        for (auto &c : origin->clauses)
+        for (int c = 0; c < origin->clause_size(); c++)
         {
             bool satisfied = 0;
             int picked_number = 0;
-            Literal *unpicked_lit = nullptr;
-            for (auto &l : c.literals)
+            Literal unpicked_lit(nullptr, 0, 0);
+            for (int lit = 0; lit < origin->size_of_clause(c); lit++)
             {
-                if (value[l.index] == Value::Free)
+                auto l = origin->locate(c, lit);
+                if (value[l.get_var()] == Value::Free)
                 {
-                    unpicked_lit = &l;
+                    unpicked_lit = l;
                     continue;
                 }
                 picked_number++;
-                if (l.is_neg == (value[l.index] == Value::False))
+                if (l.neg() == (value[l.get_var()] == Value::False))
                 {
                     satisfied = 1;
+                    break;
                 }
             }
-            if (!satisfied && picked_number == (int)c.literals.size() - 1)
+            if (!satisfied && picked_number == origin->size_of_clause(c) - 1)
             {
-                value[unpicked_lit->index] =
-                    unpicked_lit->is_neg ? Value::False : Value::True;
+                value[unpicked_lit.get_var()] =
+                    unpicked_lit.neg() ? Value::False : Value::True;
                 new_lit_picked = true;
             }
-            if (!satisfied && picked_number == (int)c.literals.size())
+            if (!satisfied && picked_number == origin->size_of_clause(c))
             {
-                origin->clauses.push_back(learned->clauses.at(index));
+                origin->push_back(learned->copy_clause(index));
                 return true;
             }
         }
@@ -86,25 +91,37 @@ inline bool check_once(CNF *origin, CNF *learned, int index)
     return false;
 }
 
-inline bool verify(CDCL &cdcl, CNF &o_cnf)
+inline bool verify(CDCL &cdcl)
 {
-    std::ostringstream _, confl;
-    cdcl.stream_dimacs(_, confl);
-    string cstr = confl.str();
+    std::ostringstream orig, confl;
+    cdcl.stream_dimacs(orig, confl);
+    string cstr = confl.str(), ostr = orig.str();
+
+    DIMACS d_c, d_o;
+    stringstream stream(cstr);
+    d_c.from_stringstream(stream);
+    CNF learned_cnf(d_c);
+
+    stringstream stream_a(ostr);
+    d_o.from_stringstream(stream_a);
+    CNF origin_cnf(d_o);
     if (cdcl.satisfiable)
     {
-        for (auto clause : o_cnf.clauses)
+        for (int clause = 0; clause < origin_cnf.clause_size(); clause++)
         {
             bool satisfied = false;
-            for (auto l : clause.literals)
-                if ((l.is_neg &&
-                     cdcl.assignment[l.index].value == Value::False) ||
-                    (!l.is_neg &&
-                     cdcl.assignment[l.index].value == Value::True))
+            for (auto lit = 0; lit < origin_cnf.size_of_clause(clause); lit++)
+            {
+                auto l = origin_cnf.locate(clause, lit);
+                if ((l.neg() &&
+                     cdcl.assignment[l.get_var()].value == Value::False) ||
+                    (!l.neg() &&
+                     cdcl.assignment[l.get_var()].value == Value::True))
                 {
                     satisfied = true;
                     break;
                 }
+            }
             if (!satisfied) return false;
         }
         return true;
@@ -112,17 +129,9 @@ inline bool verify(CDCL &cdcl, CNF &o_cnf)
 
     //// CDCL solver report UNSAT, now verify it.
 
-    DIMACS d;
-    stringstream stream(cstr);
-    d.from_stringstream(stream);
-    CNF origin_cnf, learned_cnf(d);
-    origin_cnf.variable_number = o_cnf.variable_number;
-
-    for (auto c : o_cnf.clauses) origin_cnf.clauses.push_back(c);
-
     bool unsat = true;
 
-    for (int i = 0; i < learned_cnf.clauses.size(); i++)
+    for (int i = 0; i < learned_cnf.clause_size(); i++)
     {
         if (!check_once(&origin_cnf, &learned_cnf, i))
         {
@@ -135,32 +144,48 @@ inline bool verify(CDCL &cdcl, CNF &o_cnf)
     {
         vector<int> emp;
         Clause empty_clause(&learned_cnf, emp);
-        empty_clause.literals.clear();
-        learned_cnf.clauses.push_back(empty_clause);
+        learned_cnf.push_back(move(empty_clause));
 
         unsat = check_once(&origin_cnf, &learned_cnf,
-                           learned_cnf.clauses.size() - 1);
+                           learned_cnf.clause_size() - 1);
     }
 
     return unsat;
 }
 
-int main()
+int main(int argv, char *argc[])
 {
     int seed = 92822718;
     srand(seed);
 
-    std::cout << "Tests iteration times & Variables number & Clauses number "
+    cout << "Tests iteration times & Variables number & Clauses number "
                  "(Seperated by whitespace): \n";
 
     int N, var_num, clause_num;
 
-    std::cin >> N >> var_num >> clause_num;
+    bool do_check = true;
+
+    if (argv >= 2)
+    {
+        for (int i = 1; i < argv; i++){
+            if (string(argc[i]) == "--no-check")
+            {
+                do_check = false;
+                break;
+            }
+            cout << string(argc[i]) << endl;
+        }
+    }
+
+
+    cin >> N >> var_num >> clause_num;
 
     DIMACS dimacs;
     CNF origin_cnf;
     double max_time = 0, min_time = INFINITY, total_time = 0;
     int sat_number = 0, unsat_number = 0;
+
+    if (!do_check) cout << "Enter Benchmark Mode." << endl;
 
     indicators::show_console_cursor(false);
 
@@ -184,17 +209,19 @@ int main()
         cdcl.solve();
         auto end = std::chrono::high_resolution_clock::now();
 
-        auto result = verify(cdcl, origin_cnf);
+        auto result = do_check ? verify(cdcl) : true;
 
         if (!result) // Assert: verify result should be true
         {
             bar.set_option(option::ForegroundColor{Color::red});
+            bar.mark_as_completed();
             ofstream outfile;
-            outfile.open("fail_input.in", ios::out | ios::trunc );
+            outfile.open("fail_input.in", ios::out | ios::trunc);
             outfile << dstr << endl;
 
             cout << "Assertion Failed at test " << iter << endl;
             cout << "Input data dumped in 'fail_input.in'" << endl;
+            indicators::show_console_cursor(true);
             return -1;
         }
 
@@ -211,10 +238,8 @@ int main()
         if (duration_mili < min_time) min_time = duration_mili;
         total_time += duration_mili;
 
-        //if (iter % 10 == 0)
-        //    cout << iter << " Assertions passed." << endl,
-        //        cout << "Time consume: " << duration_mili << "ms" << endl;
-
+        bar.set_option(option::PostfixText{std::to_string(iter) + "/" +
+                                           std::to_string(N)});
         bar.tick();
     }
 
@@ -228,6 +253,7 @@ int main()
          << "ms  Average: " << total_time / N << "ms" << endl;
 
     cout << "SAT: " << sat_number << "  UNSAT: " << unsat_number << endl;
+    indicators::show_console_cursor(true);
 
     return 0;
 }
