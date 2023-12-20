@@ -60,14 +60,27 @@ int Literal::get_var() { return index; }
 bool Literal::neg() { return is_neg; }
 
 Clause::Clause(CNF* cnf, std::string str) : cnf(cnf)
-{ /* todo */
+{
+    std::istringstream s_clause(str);
+    std::string s;
+
+    while (std::getline(s_clause, s, ' '))
+    {
+        if (s == "0") break;
+
+        int lit = stoi(s);
+
+        literals.push_back(Literal(cnf, abs(lit), lit < 0));
+    }
     return;
 };
 
 Clause::Clause(CNF* cnf, std::vector<int>& clause) : cnf(cnf)
 {
-    if (cnf != nullptr) this->index = cnf->clause_size();
-    else this->index = 0;
+    if (cnf != nullptr)
+        this->index = cnf->clause_size();
+    else
+        this->index = 0;
     this->cnf = cnf;
 
     for (auto iter = clause.begin(); iter != clause.end(); iter++)

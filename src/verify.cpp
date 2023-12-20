@@ -105,24 +105,26 @@ inline bool verify(CDCL &cdcl)
     stringstream stream_a(ostr);
     d_o.from_stringstream(stream_a);
     CNF origin_cnf(d_o);
-    if (cdcl.satisfiable)
+    if (cdcl.is_sat())
     {
+        auto sol = cdcl.sol();
         for (int clause = 0; clause < origin_cnf.clause_size(); clause++)
         {
             bool satisfied = false;
             for (auto lit = 0; lit < origin_cnf.size_of_clause(clause); lit++)
             {
                 auto l = origin_cnf.locate(clause, lit);
-                if ((l.neg() &&
-                     cdcl.assignment[l.get_var()].value == Value::False) ||
-                    (!l.neg() &&
-                     cdcl.assignment[l.get_var()].value == Value::True))
+                if ((l.neg() && sol[l.get_var()] < 0) ||
+                    (!l.neg() && sol[l.get_var()] > 0))
                 {
                     satisfied = true;
                     break;
                 }
             }
-            if (!satisfied) return false;
+            if (!satisfied)
+            {
+                return false;
+            }
         }
         return true;
     }
@@ -159,7 +161,7 @@ int main(int argv, char *argc[])
     srand(seed);
 
     cout << "Tests iteration times & Variables number & Clauses number "
-                 "(Seperated by whitespace): \n";
+            "(Seperated by whitespace): \n";
 
     int N, var_num, clause_num;
 
@@ -167,7 +169,8 @@ int main(int argv, char *argc[])
 
     if (argv >= 2)
     {
-        for (int i = 1; i < argv; i++){
+        for (int i = 1; i < argv; i++)
+        {
             if (string(argc[i]) == "--no-check")
             {
                 do_check = false;
@@ -176,7 +179,6 @@ int main(int argv, char *argc[])
             cout << string(argc[i]) << endl;
         }
     }
-
 
     cin >> N >> var_num >> clause_num;
 
@@ -225,7 +227,7 @@ int main(int argv, char *argc[])
             return -1;
         }
 
-        if (cdcl.satisfiable)
+        if (cdcl.is_sat())
             sat_number++;
         else
             unsat_number++;

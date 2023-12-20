@@ -2,8 +2,6 @@
 #include <cdcl/cdcl.hpp>
 #include <iostream>
 
-ClauseDatabase::ClauseDatabase(CNF& cnf) {}
-
 void ClauseDatabase::add_clause(Clause cls)
 {
     ClauseWrapper cls_w(cls, size());
@@ -104,7 +102,7 @@ void ClauseWrapper::debug()
     for (; literal != literals.end(); literal++)
     {
         std::cout << "Variable " << (*literal).get_var()
-                  << ((*literal).is_neg() ? " (Negatived)" : "");
+                  << ((*literal).is_neg() ? " (Negatived)" : "") << std::endl;
     }
 
     return;
@@ -189,13 +187,12 @@ CRef VariableWrapper::update_watchlist(Assign assign)
 std::ostream& operator<<(std::ostream& stream, const Value& v)
 {
     std::string str;
-    switch (v)
-    {
-        case Value::Free: str = "Free"; break;
-        case Value::False: str = "False"; break;
-        case Value::True: str = "True"; break;
-        default: str = "";
-    }
+    if (v == Value::False)
+        str = "False";
+    else if (v == Value::True)
+        str = "True";
+    else
+        str = "Free";
     stream << str;
     return stream;
 }

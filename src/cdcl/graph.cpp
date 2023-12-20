@@ -1,40 +1,41 @@
 #include "cdcl/graph.hpp"
 #include "cdcl/cdcl.hpp"
 #include "cdcl/basetype.hpp"
+#include <cstdlib>
 #include <iostream>
 #include <vector>
 
-void ImpGraph::init(CDCL* cdcl)
+ImpGraph::ImpGraph(CDCL& cdcl)
 {
-    this->cdcl = cdcl;
-
-    this->vars_to_nodes.resize(cdcl->variable_number + 1);
-    this->assigned_order.resize(cdcl->variable_number + 1);
-    this->trail.resize(1);
+    auto v = cdcl.get_variable_num();
+    vars_to_nodes.resize(v + 1);
+    assigned_order.resize(v + 1);
+    trail.reserve(v + 1);
+    trail.resize(1);
     return;
 }
 
-void ImpGraph::pick_var(CRef reason, Lit picked_lit)
+int ImpGraph::pick_var(CRef reason, Lit picked_lit)
 {
     int rank = 0;
-    Assign assign = this->cdcl->assignment.at(picked_lit.get_var());
-    ImpNode* conclusion; //= this->add_node(assign, rank);
+    Assign assign = Assign{picked_lit.get_var(),
+                           picked_lit.is_neg() ? Value::False : Value::True};
+    ImpNode* conclusion;
 
     if (reason.isnull()) // The variable is picked because UP can't be
                          // furthered, no cluase can derive it.
     {
-        rank = this->cdcl->pick_stack.size();
+        rank = trail.size();
         conclusion = this->add_node(assign, rank);
-        this->cdcl->vars_rank.at(picked_lit.get_var()) = rank;
         this->assigned_order.at(picked_lit.get_var()) = 1;
         this->trail.push_back(std::vector<ImpNode*>(1, conclusion));
-        return;
+        return rank;
     }
 
     for (auto lit : (*reason).literals)
         if (lit != picked_lit)
         {
-            rank = std::max(rank, cdcl->vars_rank.at(lit.get_var()));
+            rank = std::max(rank, vars_to_nodes.at(lit.get_var())->get_rank());
         }
 
     conclusion = this->add_node(assign, rank);
@@ -51,7 +52,6 @@ void ImpGraph::pick_var(CRef reason, Lit picked_lit)
             this->add_reason(premise, conclusion, reason);
         }
 
-    this->cdcl->vars_rank.at(picked_lit.get_var()) = rank;
     if (this->trail.size() > rank)
         this->trail.at(rank).push_back(conclusion);
     else
@@ -62,7 +62,7 @@ void ImpGraph::pick_var(CRef reason, Lit picked_lit)
 
     this->assigned_order.at(picked_lit.get_var()) = this->trail.at(rank).size();
 
-    return;
+    return rank;
 }
 
 ImpNode* ImpGraph::add_node(Assign assign, int rank)
@@ -160,7 +160,9 @@ Clause ImpGraph::conflict_clause_gen(CRef conflict_clause)
     for (auto pair : vars_appearance)
     {
         auto var = pair.first;
-        int lit = (cdcl->assignment.at(var).value == Value::True) ? -var : var;
+        int lit = (vars_to_nodes.at(var)->get_assign().value == Value::True)
+                      ? -var
+                      : var;
 
         if (var == blocker)
         {
@@ -172,7 +174,9 @@ Clause ImpGraph::conflict_clause_gen(CRef conflict_clause)
     }
 
     int fuip = queue.top()->get_var_index();
-    int lit = (cdcl->assignment.at(fuip).value == Value::True) ? -fuip : fuip;
+    int lit = (vars_to_nodes.at(fuip)->get_assign().value == Value::True)
+                  ? -fuip
+                  : fuip;
     clause_raw.push_back(lit);
 
     std::swap(clause_raw.back(), clause_raw.front());
@@ -187,9 +191,10 @@ Clause ImpGraph::conflict_clause_gen(CRef conflict_clause)
     return learned_clause;
 }
 
-void ImpGraph::drop_to(int rank)
+std::queue<Assign> ImpGraph::drop_to(int rank)
 {
-    if (this->trail.end() - this->trail.begin() <= rank) return;
+    std::queue<Assign> dropped;
+    if (this->trail.end() - this->trail.begin() <= rank) return dropped;
     auto trail_back = this->trail.end() - 1;
     // Memory Leak Probability Here.
     while (trail_back - this->trail.begin() >= rank)
@@ -200,20 +205,22 @@ void ImpGraph::drop_to(int rank)
             Assign deassign;
             deassign.value = Value::Free;
             deassign.variable_index = (*node)->get_assign().variable_index;
-            this->cdcl->update(deassign);
+            dropped.push(deassign);
 
             this->vars_to_nodes[(*node)->get_var_index()] = nullptr;
+
             (*node)->drop();
         }
         trail_back--;
     }
     trail.resize(rank);
-    return;
+    return std::move(dropped);
 }
 
-void ImpGraph::drop() {
-    for(auto node: this->vars_to_nodes)
-        if(node != nullptr) node->drop();
+ImpGraph::~ImpGraph()
+{
+    for (auto node : this->vars_to_nodes)
+        if (node != nullptr) node->drop();
     return;
 }
 
@@ -254,12 +261,6 @@ int ImpNode::get_var_index() { return this->assign.variable_index; };
 Assign ImpNode::get_assign() { return this->assign; }
 
 const std::vector<ImpNode*>& ImpNode::get_in_node() { return this->in_node; }
-
-void ImpRelation::drop()
-{
-    delete this;
-    return;
-}
 
 void ImpNode::debug()
 {

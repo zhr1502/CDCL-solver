@@ -96,11 +96,9 @@ class ClauseDatabase
 {
     friend class LRef;
     friend class CRef;
-    std::vector<Lit> literal;
     std::vector<ClauseWrapper> clause;
 
 public:
-    ClauseDatabase(CNF &);
     void parse();
     void add_clause(Clause);
     CRef get_clause(int);

@@ -1,26 +1,12 @@
+#include <vector>
+#include <queue>
 #include "basetype.hpp"
 #pragma once
 class ImpNode;
 
-class ImpRelation
-// ImpRelation: Object describe a edge in the CDCL's Implication graph
-{
-    CRef relation_clause;
-    // The clause according to which this->conclusion holds if this->premise
-    // holds
-    ImpNode *premise;
-    ImpNode *conclusion;
-
-public:
-    void drop();
-    ImpNode *get_conclusion(), *get_premise();
-    ImpRelation(CRef, ImpNode *, ImpNode *);
-};
-
 class ImpGraph
 // ImpGraph: object that describe a CDCL Implication graph
 {
-    CDCL *cdcl;
     // Pointing to CDCL object the graph belongs to
     // std::vector<ImpNode *> fixed_var_nodes;
     // std::vector<ImpRelation *> relations;
@@ -31,16 +17,16 @@ class ImpGraph
     // Value::Free), then map_from_vars_to_nodes[var_index] = nullptr.
 
 public:
-    void init(CDCL *);
-
+    ImpGraph(CDCL &);
+    ~ImpGraph();
     /*
-     * ImpGraph::construct(std::pair<clause, literal>):
+     * ImpGraph::pick_var(std::pair<clause, literal>):
      * Will construct a new node when we assign value to a variable
      * Input: std::pair of a ClauseWrapper and Literal object,
      * The second is the newly assigned variable and the first is the clause by
      * which the variable's value is determined.
      */
-    void pick_var(CRef, Lit);
+    int pick_var(CRef, Lit);
 
     /*
      * ImpGraph::add_node(assign, rank):
@@ -75,7 +61,7 @@ public:
      * This will drop all nodes with ranks bigger or equal to parameter 'rank'
      * also drop relevant edge
      */
-    void drop_to(int);
+    std::queue<Assign> drop_to(int);
 
     /*
      * ImpNode::drop()

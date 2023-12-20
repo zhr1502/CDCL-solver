@@ -1,4 +1,6 @@
 #include "include/cdcl/cdcl.hpp"
+#include "cdcl/basetype.hpp"
+#include "cdcl/graph.hpp"
 #include "include/cdcl/cnf.hpp"
 #include <algorithm>
 #include <ostream>
@@ -16,8 +18,11 @@ void CDCL::solve()
     if (up_result)
         return; // Unit propagation when no variable is picked returns conflict,
                 // the CNF is not satisfiable.
-                //
-    int confl_cnt = 0, pick_cnt = 0;
+
+    std::vector<int> luby(1, restart_r);
+    auto luby_r = luby.begin();
+
+    int confl_cnt = 0;
     do
     {
         Lit pick_lit = this->choose_variable();
@@ -26,22 +31,20 @@ void CDCL::solve()
             satisfiable = true;
             return;
         }
-        Assign assign =
-            Assign{pick_lit.get_var(), rand() % 2 ? Value::False : Value::True};
+        Assign assign = Assign{pick_lit.get_var(),
+                               pick_lit.is_neg() ? Value::False : Value::True};
         pick_stack.push(assign);
-        pick_cnt++;
 
-        this->graph->pick_var(nullCRef, pick_lit);
+        vars_rank.at(pick_lit.get_var()) =
+            this->graph.pick_var(nullCRef, pick_lit);
 
         this->update(assign);
 
         auto up_result = this->unit_propogation();
         while (up_result)
         {
-            Assign deassign;
-
             auto last_conflict_clause_ref = clausedb.get_last_cls();
-            auto last_conflict_clause = *last_conflict_clause_ref;
+            auto& last_conflict_clause = *last_conflict_clause_ref;
 
             Lit conflict_fuip = last_conflict_clause.literals.at(0);
 
@@ -52,13 +55,14 @@ void CDCL::solve()
             else
                 unpick_to_rank = vars_rank.at(conflict_fuip.get_var());
 
-            while (pick_stack.size() >= unpick_to_rank)
-            {
-                deassign = pick_stack.top();
-                this->pick_stack.pop();
-            }
+            while (pick_stack.size() >= unpick_to_rank) this->pick_stack.pop();
 
-            this->graph->drop_to(unpick_to_rank);
+            auto deassign = this->graph.drop_to(unpick_to_rank);
+            while (!deassign.empty())
+            {
+                update(deassign.front());
+                deassign.pop();
+            }
 
             unchecked_queue.push(
                 std::make_pair(conflict_fuip, last_conflict_clause_ref));
@@ -72,16 +76,29 @@ void CDCL::solve()
                 satisfiable = false;
                 return;
             }
+
             confl_cnt++;
-        }
-        if (confl_cnt > 300 && (double)pick_cnt / confl_cnt > 0.97)
-        {
-            confl_cnt = 0;
-            pick_cnt = 0;
-            this->graph->drop_to(1);
-            while (!pick_stack.empty()) pick_stack.pop();
-            while (!unchecked_queue.empty()) unchecked_queue.pop();
-            for (int i = 1; i <= variable_number; i++) vars_rank[i] = 0;
+            if (confl_cnt >= *luby_r)
+            {
+                confl_cnt = 0;
+                auto deassign = this->graph.drop_to(1);
+                while (!deassign.empty())
+                {
+                    update(deassign.front());
+                    deassign.pop();
+                }
+                while (!pick_stack.empty()) pick_stack.pop();
+                while (!unchecked_queue.empty()) unchecked_queue.pop();
+                confl = nullCRef;
+
+                luby_r++;
+                if (luby_r == luby.end())
+                {
+                    luby.push_back(luby.back() * 2);
+                    luby_r = luby.begin();
+                }
+                break;
+            }
         }
     } while (true);
 
@@ -95,7 +112,7 @@ bool CDCL::unit_propogation()
 
     if (confl != nullCRef) // Conflict encountered
     {
-        Clause learned_clause = this->graph->conflict_clause_gen(confl);
+        Clause learned_clause = this->graph.conflict_clause_gen(confl);
 
         clausedb.add_clause(learned_clause);
         analyze(clausedb.get_last_cls());
@@ -115,7 +132,8 @@ bool CDCL::unit_propogation()
         new_assign = Assign{unit_lit.get_var(),
                             unit_lit.is_neg() ? Value::False : Value::True};
 
-        this->graph->pick_var(reason, unit_lit);
+        vars_rank.at(unit_lit.get_var()) =
+            this->graph.pick_var(reason, unit_lit);
 
         auto confl = this->update(new_assign);
 
@@ -123,7 +141,7 @@ bool CDCL::unit_propogation()
         {
             conflict = true;
 
-            Clause learned_clause = this->graph->conflict_clause_gen(confl);
+            Clause learned_clause = this->graph.conflict_clause_gen(confl);
 
             clausedb.add_clause(learned_clause);
             analyze(clausedb.get_last_cls());
@@ -178,7 +196,11 @@ Lit CDCL::choose_variable()
 }
 
 CDCL::CDCL(CNF& cnf)
-    : clausedb(cnf), confl(CRef(-1, clausedb)), nullCRef(CRef(-1, clausedb))
+    : variable_number(cnf.var_num()),
+      clause_size(cnf.clause_size()),
+      confl(CRef(-1, clausedb)),
+      nullCRef(CRef(-1, clausedb)),
+      graph(*this)
 {
     variable_number = cnf.var_num();
     clause_size = cnf.clause_size();
@@ -195,15 +217,8 @@ CDCL::CDCL(CNF& cnf)
         clausedb.add_clause(cnf.copy_clause(c)),
             analyze(clausedb.get_last_cls());
 
-    ImpGraph* graph = new ImpGraph;
-    graph->init(this);
-
-    this->graph = graph;
-
     return;
 }
-
-CDCL::~CDCL() { graph->drop(); }
 
 Value CDCL::get_lit_value(Lit l)
 {
@@ -212,18 +227,38 @@ Value CDCL::get_lit_value(Lit l)
     return ((v == Value::False) == l.is_neg()) ? Value::True : Value::False;
 }
 
+int CDCL::get_variable_num() { return variable_number; }
+
+int CDCL::get_clause_size() { return clause_size; }
+
 void CDCL::debug()
 {
     std::cout << "============CDCL Object Debug Info=============" << std::endl;
+    for (int i = clause_size; i < clausedb.size(); i++)
+        (*clausedb.get_clause(i)).debug();
     // std::cout << std::endl << "Learned Conflict Clauses:" << std::endl;
     // for (auto c : conflict_clause) c->debug();
     // std::cout << std::endl;
 
     std::cout << std::endl << "Implication Graph:" << std::endl;
-    graph->debug();
+    graph.debug();
 
     std::cout << "Satisfiable:" << (satisfiable ? "Yes" : "No") << std::endl
               << std::endl;
+}
+
+bool CDCL::is_solved() { return solved; }
+
+bool CDCL::is_sat() { return satisfiable; }
+
+std::vector<int> CDCL::sol()
+{
+    std::vector<int> sol;
+    if (!is_sat()) return sol;
+    for (auto a : assignment)
+        sol.push_back(a.value == Value::False ? -a.variable_index
+                                              : a.variable_index);
+    return std::move(sol);
 }
 
 void CDCL::print()
