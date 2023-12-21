@@ -155,6 +155,10 @@ bool CDCL::unit_propogation()
 CRef CDCL::update(Assign assign)
 {
     assignment.at(assign.variable_index) = assign;
+    if (assign.value != Value::Free)
+        vars.at(assign.variable_index).set_recent_value(assign.value);
+    else
+        vsids.insert(assign.variable_index);
     auto res = vars.at(assign.variable_index).update_watchlist(assign);
     if (res != nullCRef) confl = res;
     return res;
@@ -178,21 +182,40 @@ void CDCL::analyze(CRef cls)
 
     vars.at(f.get_var()).watchlist_pushback(cls, f);
     vars.at(s.get_var()).watchlist_pushback(cls, s);
+
+    if (clause.index < clause_size) return;
+
+    for (auto lit : clause.literals)
+    {
+        vsids.bump_var(lit.get_var());
+    }
+    vsids.decay();
+
     return;
 }
 
 Lit CDCL::choose_variable()
 {
-    int variable = 0;
-    for (int i = 1; i <= variable_number; i++)
-        if (this->assignment[i].value == Value::Free)
-        {
-            variable = i;
-            break;
-        }
-    if (!variable) return nullLit;
+    // int variable = 0;
+    // for (int i = 1; i <= variable_number; i++)
+    //     if (this->assignment[i].value == Value::Free)
+    //     {
+    //         variable = i;
+    //         break;
+    //     }
+    // if (!variable) return nullLit;
 
-    return Lit(variable, rand() % 2);
+    // return Lit(variable, rand() % 2);
+    while (!vsids.is_empty())
+    {
+        int v = vsids.top();
+        vsids.pop();
+        if (assignment[v].value != Value::Free) continue;
+        if (vars.at(v).get_recent_value() == Value::Free)
+            return Lit(v, rand() % 2);
+        return Lit(v, vars.at(v).get_recent_value() == Value::True);
+    }
+    return nullLit;
 }
 
 CDCL::CDCL(CNF& cnf)
@@ -200,7 +223,8 @@ CDCL::CDCL(CNF& cnf)
       clause_size(cnf.clause_size()),
       confl(CRef(-1, clausedb)),
       nullCRef(CRef(-1, clausedb)),
-      graph(*this)
+      graph(*this),
+      vsids(cnf.var_num())
 {
     variable_number = cnf.var_num();
     clause_size = cnf.clause_size();

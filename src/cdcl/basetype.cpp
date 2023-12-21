@@ -143,7 +143,11 @@ void VariableWrapper::watchlist_pushback(CRef clause, Lit self)
     return;
 }
 
+void VariableWrapper::set_recent_value(Value v) { recent_value = v; }
+
 Value VariableWrapper::get_value() { return cdcl.assignment.at(var).value; }
+
+Value VariableWrapper::get_recent_value() { return recent_value; }
 
 CRef VariableWrapper::update_watchlist(Assign assign)
 {

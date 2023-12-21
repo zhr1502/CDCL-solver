@@ -9,3 +9,6 @@ target_link_libraries(solver cdcl)
 
 add_executable(verify src/verify.cpp)
 target_link_libraries(verify cdcl indicators)
+
+add_executable(test src/test.cpp)
+target_link_libraries(test cdcl)

@@ -1,6 +1,7 @@
 #include "cnf.hpp"
 #include "basetype.hpp"
 #include "graph.hpp"
+#include "heuristic.hpp"
 #include <sstream>
 #include <vector>
 #include <map>
@@ -34,6 +35,7 @@ private:
     CRef nullCRef;
 
     ImpGraph graph;
+    Heap vsids;
     bool satisfiable = false, solved = false;
     // variable CDCL::solved will be set true when CDCL::solve() is called
     // CDCL::satisfiable implies CDCL::solved

@@ -45,12 +45,15 @@ class VariableWrapper
     Variable var;
     CDCL &cdcl;
     std::list<CRef> pos_watcher, neg_watcher;
+    Value recent_value = Value::Free;
 
 public:
     VariableWrapper(Variable, CDCL &);
     CRef update_watchlist(Assign);
     std::list<CRef> &get_watchlist(Assign);
     void watchlist_pushback(CRef, Lit);
+    void set_recent_value(Value);
+    Value get_recent_value();
     Value get_value();
 };
 
