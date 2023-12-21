@@ -3,7 +3,6 @@
 
 int main()
 {
-    //freopen("/home/zhr1502/project/CDCL-solver/fail_input.in","r",stdin);
     DIMACS d;
     d.input();
 

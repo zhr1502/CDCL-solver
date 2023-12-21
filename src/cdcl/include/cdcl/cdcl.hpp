@@ -74,7 +74,7 @@ private:
      */
 
     Value get_lit_value(Lit);
-    void parse();
+    bool parse_clause(Clause&);
 
 public:
     CDCL(CNF &);

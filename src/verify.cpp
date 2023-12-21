@@ -162,7 +162,7 @@ int main(int argv, char *argc[])
     srand(seed);
 
     cout << "Tests iteration times & Variables number & Clauses number "
-            "(Seperated by whitespace): \n";
+            "(Separated by whitespace): \n";
 
     int N, var_num, clause_num;
 

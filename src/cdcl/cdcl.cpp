@@ -127,6 +127,12 @@ bool CDCL::unit_propogation()
         auto unit_lit = unchecked_queue.front().first;
         unchecked_queue.pop();
 
+        if ((*reason).literals.size() == 1)
+        {
+            if (assignment[unit_lit.get_var()].value != Value::Free &&
+                get_lit_value(unit_lit) == Value::False)
+                return true;
+        }
         if (!(*reason).is_unit(unit_lit, this)) continue;
 
         new_assign = Assign{unit_lit.get_var(),
@@ -196,16 +202,6 @@ void CDCL::analyze(CRef cls)
 
 Lit CDCL::choose_variable()
 {
-    // int variable = 0;
-    // for (int i = 1; i <= variable_number; i++)
-    //     if (this->assignment[i].value == Value::Free)
-    //     {
-    //         variable = i;
-    //         break;
-    //     }
-    // if (!variable) return nullLit;
-
-    // return Lit(variable, rand() % 2);
     while (!vsids.is_empty())
     {
         int v = vsids.top();
@@ -216,6 +212,28 @@ Lit CDCL::choose_variable()
         return Lit(v, vars.at(v).get_recent_value() == Value::True);
     }
     return nullLit;
+}
+
+bool CDCL::parse_clause(Clause& cls)
+{
+    std::vector<int> vis(variable_number + 1, 0);
+    std::vector<int> parsed;
+    for (auto lit : cls.get_literals())
+    {
+        if (vis[lit.get_var()])
+        {
+            if (vis[lit.get_var()] < 0 && !lit.neg() ||
+                vis[lit.get_var()] > 0 && lit.neg())
+                return false;
+        }
+        else
+        {
+            vis[lit.get_var()] = lit.neg() ? -1 : 1;
+            parsed.push_back(vis[lit.get_var()] * lit.get_var());
+        }
+    }
+    cls = Clause(nullptr, parsed);
+    return true;
 }
 
 CDCL::CDCL(CNF& cnf)
@@ -238,8 +256,15 @@ CDCL::CDCL(CNF& cnf)
     this->vars_rank.resize(variable_number + 1);
 
     for (int c = 0; c < cnf.clause_size(); c++)
-        clausedb.add_clause(cnf.copy_clause(c)),
+    {
+        Clause cls = cnf.copy_clause(c);
+        if (parse_clause(cls))
+        {
+            clausedb.add_clause(cls);
             analyze(clausedb.get_last_cls());
+        }
+    }
+    clause_size = clausedb.size();
 
     return;
 }

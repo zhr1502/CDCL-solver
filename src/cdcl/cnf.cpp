@@ -86,6 +86,7 @@ Clause::Clause(CNF* cnf, std::vector<int>& clause) : cnf(cnf)
     for (auto iter = clause.begin(); iter != clause.end(); iter++)
     {
         // auto pos = cnf.insert_literal(abs(*iter), *iter < 0);
+        if(*iter == 0) break;
         Literal pos(cnf, abs(*iter), *iter < 0);
 
         this->literals.push_back(pos);
