@@ -10,7 +10,7 @@ int main()
     CNF cnf(d);
 
     CDCL cdcl(cnf);
-    cdcl.solve();
+    cdcl.solve(758926699);
 
     cdcl.print();
 

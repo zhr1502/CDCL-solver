@@ -8,11 +8,11 @@
 #include <iostream>
 #include <queue>
 
-void CDCL::solve()
+void CDCL::solve(int seed)
 {
     if (this->solved) return;
 
-    srand(758926699);
+    srand(seed);
     this->solved = true;
     auto up_result = this->unit_propogation();
     if (up_result)

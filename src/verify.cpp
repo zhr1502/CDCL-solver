@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <ratio>
 #include <sstream>
@@ -208,7 +209,7 @@ int main(int argv, char *argc[])
         CDCL cdcl(origin_cnf);
 
         auto start = std::chrono::high_resolution_clock::now();
-        cdcl.solve();
+        cdcl.solve(rand());
         auto end = std::chrono::high_resolution_clock::now();
 
         auto result = do_check ? verify(cdcl) : true;

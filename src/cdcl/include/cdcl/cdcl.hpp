@@ -83,7 +83,7 @@ public:
 
     int get_clause_size();
 
-    void solve();
+    void solve(int);
 
     bool is_solved();
     bool is_sat();
