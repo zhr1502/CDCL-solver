@@ -67,7 +67,6 @@ public:
      * ImpNode::drop()
      * drop all nodes and edges
      */
-    void drop();
     void add_reason(ImpNode *, ImpNode *, CRef);
     void debug();
 };
@@ -90,6 +89,7 @@ class ImpNode
 
 public:
     ImpNode(Assign, int, bool = false);
+    ~ImpNode();
     friend void ImpGraph::add_reason(ImpNode *, ImpNode *, CRef);
     int get_rank();
     int get_var_index();
@@ -97,6 +97,5 @@ public:
 
     const std::vector<ImpNode *> &get_in_node();
 
-    void drop();
     void debug();
 };

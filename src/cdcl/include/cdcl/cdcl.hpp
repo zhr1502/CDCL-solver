@@ -16,7 +16,7 @@ class CDCL;
 class CDCL
 {
     friend class VariableWrapper;
-    friend class ClauseWrapper;
+    friend struct ClauseWrapper;
     friend class CRef;
 
 private:

@@ -4,7 +4,7 @@
 
 #pragma once
 
-struct CDCL;
+class CDCL;
 
 using Variable = int;
 

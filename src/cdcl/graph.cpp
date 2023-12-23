@@ -209,7 +209,7 @@ std::queue<Assign> ImpGraph::drop_to(int rank)
 
             this->vars_to_nodes[(*node)->get_var_index()] = nullptr;
 
-            (*node)->drop();
+            delete (*node);
         }
         trail_back--;
     }
@@ -220,7 +220,7 @@ std::queue<Assign> ImpGraph::drop_to(int rank)
 ImpGraph::~ImpGraph()
 {
     for (auto node : this->vars_to_nodes)
-        if (node != nullptr) node->drop();
+        if (node != nullptr) delete node;
     return;
 }
 
@@ -234,7 +234,7 @@ void ImpGraph::add_reason(ImpNode* premise, ImpNode* conclusion, CRef reason)
     return;
 }
 
-void ImpNode::drop()
+ImpNode::~ImpNode()
 {
     for (auto node : in_node)
         if (node != nullptr)
@@ -242,7 +242,6 @@ void ImpNode::drop()
             node->out_node.pop_back();
             node->out_reason.pop_back();
         }
-    delete this;
     return;
 }
 

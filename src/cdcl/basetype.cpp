@@ -160,7 +160,7 @@ CRef VariableWrapper::update_watchlist(Assign assign)
     while (it != updlist.end())
     {
         // watcher& w = *it;
-        CRef& clause = *it;
+        CRef clause = *it;
         Lit blocker = (*clause).get_blocker(var);
         Lit watcher = (*clause).get_blocker(blocker.get_var());
 

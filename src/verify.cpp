@@ -9,28 +9,27 @@
 #include <fstream>
 #include <cdcl/cdcl.hpp>
 #include <cdcl/cnf.hpp>
-#include <indicators/block_progress_bar.hpp>
+#include <indicators/progress_bar.hpp>
 #include <indicators/cursor_control.hpp>
 
-using namespace std;
 const int MAX_VAR_NUMBER = 200 + 10;
 
-inline string make_clause_str(vector<int> *x, int m)
+inline std::string make_clause_str(std::vector<int> *x, int m)
 {
-    string clause = "";
+    std::string clause = "";
     random_shuffle(x->begin(), x->end());
 
     for (auto var = x->begin(); var < x->begin() + m; var++)
-        clause += to_string((*var) * (rand() % 2 * 2 - 1)) + " ";
+        clause += std::to_string((*var) * (rand() % 2 * 2 - 1)) + " ";
     return clause + "0\n";
 }
 
-inline string gen_random_str_input(int var_num, int clause_num)
+inline std::string gen_random_str_input(int var_num, int clause_num)
 {
-    string header =
-        "p cnf " + to_string(var_num) + " " + to_string(clause_num) + "\n";
-    string dimacs = header;
-    static vector<int> var;
+    std::string header =
+        "p cnf " + std::to_string(var_num) + " " + std::to_string(clause_num) + "\n";
+    std::string dimacs = header;
+    static std::vector<int> var;
     var.resize(var_num);
     for (int i = 0; i < var_num; i++) var.at(i) = i + 1;
 
@@ -96,14 +95,14 @@ inline bool verify(CDCL &cdcl)
 {
     std::ostringstream orig, confl;
     cdcl.stream_dimacs(orig, confl);
-    string cstr = confl.str(), ostr = orig.str();
+    std::string cstr = confl.str(), ostr = orig.str();
 
     DIMACS d_c, d_o;
-    stringstream stream(cstr);
+    std::stringstream stream(cstr);
     d_c.from_stringstream(stream);
     CNF learned_cnf(d_c);
 
-    stringstream stream_a(ostr);
+    std::stringstream stream_a(ostr);
     d_o.from_stringstream(stream_a);
     CNF origin_cnf(d_o);
     if (cdcl.is_sat())
@@ -145,9 +144,9 @@ inline bool verify(CDCL &cdcl)
 
     if (unsat)
     {
-        vector<int> emp;
+        std::vector<int> emp;
         Clause empty_clause(&learned_cnf, emp);
-        learned_cnf.push_back(move(empty_clause));
+        learned_cnf.push_back(std::move(empty_clause));
 
         unsat = check_once(&origin_cnf, &learned_cnf,
                            learned_cnf.clause_size() - 1);
@@ -161,7 +160,7 @@ int main(int argv, char *argc[])
     int seed = 92822718;
     srand(seed);
 
-    cout << "Tests iteration times & Variables number & Clauses number "
+    std::cout << "Tests iteration times & Variables number & Clauses number "
             "(Separated by whitespace): \n";
 
     int N, var_num, clause_num;
@@ -172,35 +171,35 @@ int main(int argv, char *argc[])
     {
         for (int i = 1; i < argv; i++)
         {
-            if (string(argc[i]) == "--no-check")
+            if (std::string(argc[i]) == "--no-check")
             {
                 do_check = false;
                 break;
             }
-            cout << string(argc[i]) << endl;
+            std::cout << std::string(argc[i]) << std::endl;
         }
     }
 
-    cin >> N >> var_num >> clause_num;
+    std::cin >> N >> var_num >> clause_num;
 
     DIMACS dimacs;
     CNF origin_cnf;
     double max_time = 0, min_time = INFINITY, total_time = 0;
     int sat_number = 0, unsat_number = 0;
 
-    if (!do_check) cout << "Enter Benchmark Mode." << endl;
+    if (!do_check) std::cout << "Enter Benchmark Mode." << std::endl;
 
     indicators::show_console_cursor(false);
 
     using namespace indicators;
-    BlockProgressBar bar{
+    ProgressBar bar{
         option::BarWidth{80}, option::ForegroundColor{Color::yellow},
         option::FontStyles{std::vector<FontStyle>{FontStyle::bold}},
         option::MaxProgress{N}};
 
     for (int iter = 1; iter <= N; iter++)
     {
-        string dstr = gen_random_str_input(var_num, clause_num);
+        std::string dstr = gen_random_str_input(var_num, clause_num);
         std::istringstream stream(dstr);
 
         dimacs.from_stringstream(stream);
@@ -218,12 +217,12 @@ int main(int argv, char *argc[])
         {
             bar.set_option(option::ForegroundColor{Color::red});
             bar.mark_as_completed();
-            ofstream outfile;
-            outfile.open("fail_input.in", ios::out | ios::trunc);
-            outfile << dstr << endl;
+            std::ofstream outfile;
+            outfile.open("fail_input.in", std::ios::out | std::ios::trunc);
+            outfile << dstr << std::endl;
 
-            cout << "Assertion Failed at test " << iter << endl;
-            cout << "Input data dumped in 'fail_input.in'" << endl;
+            std::cout << "Assertion Failed at test " << iter <<std::endl;
+            std::cout << "Input data dumped in 'fail_input.in'" << std::endl;
             indicators::show_console_cursor(true);
             return -1;
         }
@@ -244,18 +243,19 @@ int main(int argv, char *argc[])
         bar.set_option(option::PostfixText{std::to_string(iter) + "/" +
                                            std::to_string(N)});
         bar.tick();
+        //if(iter%1 == 0) std::cout << iter << " tests passed" << std::endl;
     }
 
     bar.set_option(option::ForegroundColor{Color::green});
     bar.mark_as_completed();
 
-    cout << "All tests passed. No error reported." << endl;
+    std::cout << "All tests passed. No error reported." << std::endl;
 
-    cout << endl << "Time consuming:" << endl;
-    cout << "Max: " << max_time << "ms  Min: " << min_time
-         << "ms  Average: " << total_time / N << "ms" << endl;
+    std::cout << std::endl << "Time consuming:" << std::endl;
+    std::cout << "Max: " << max_time << "ms  Min: " << min_time
+         << "ms  Average: " << total_time / N << "ms" << std::endl;
 
-    cout << "SAT: " << sat_number << "  UNSAT: " << unsat_number << endl;
+    std::cout << "SAT: " << sat_number << "  UNSAT: " << unsat_number << std::endl;
     indicators::show_console_cursor(true);
 
     return 0;
