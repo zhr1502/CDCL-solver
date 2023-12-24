@@ -1,10 +1,10 @@
-### Introduction
+## Introduction
 An simple conflict-driven clause learning(CDCL) SAT-solver written in C++.
 
-### Develop
+## Develop
 
-#### Environment 
-You should develop in GNU-make or Mingw-make environment.
+### Environment 
+The project can be compiled under GNU, MSVC and Mingw compilers.
 
 If you're using nix toolchain, just type
 ```
@@ -12,18 +12,24 @@ nix develop
 ```
 to enter the develop shell.
 
-#### Build from the source
-Use
+### Build from the source
+- Submodule
+```
+git submodule init indicators
+git submodule update indicators
+```
+- Configure
 ```
 cmake -S . -B build
 ```
-to configure the project. Then build it by
+- Build
 ```
 cmake --build build
 ```
 The binary targets will be generated as `build/solver` and `build/verify`
 
-### Usage
+## Usage
+### Solver
 Input the conjunctive normal form (CNF) in DIMACS format to the stdin.
 
 Note that comments is not supported yet.
@@ -57,4 +63,19 @@ Variable 7      -> True
 Variable 8      -> True
 Variable 9      -> True
 Variable 10     -> False
+```
+### Verify
+Input the number of verification rounds and scale of data, and `build/verify` will verify the correctness of the solver on random data.
+#### Example
+```
+[host@host:~]$ ./build/verify
+Tests iteration times & Variables number & Clauses number (Separated by whitespace):
+1000 100 400
+[================================================================================] 1000/1000
+[================================================================================] 1000/1000
+All tests passed. No error reported.
+
+Time consuming:
+Max: 302.033ms  Min: 0.0758ms  Average: 22.559ms
+SAT: 931  UNSAT: 69
 ```
