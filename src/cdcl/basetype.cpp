@@ -1,6 +1,7 @@
 #include <cdcl/basetype.hpp>
 #include <cdcl/cdcl.hpp>
 #include <iostream>
+#include <queue>
 
 void ClauseDatabase::add_clause(Clause cls)
 {
@@ -152,9 +153,9 @@ Value VariableWrapper::get_value() { return cdcl.assignment.at(var).value; }
 
 Value VariableWrapper::get_recent_value() { return recent_value; }
 
-CRef VariableWrapper::update_watchlist(Assign assign)
+std::queue<CRef> VariableWrapper::update_watchlist(Assign assign)
 {
-    CRef confl = cdcl.nullCRef;
+    std::queue<CRef> confl;
     if (assign.value == Value::Free) return confl;
 
     auto& updlist = get_watchlist(assign);
@@ -170,8 +171,8 @@ CRef VariableWrapper::update_watchlist(Assign assign)
 
         if (cdcl.get_lit_value(new_watch_var) == Value::False)
         {
-            if (cdcl.get_lit_value(blocker) == Value::False && confl == cdcl.nullCRef)
-                confl = clause;
+            if (cdcl.get_lit_value(blocker) == Value::False)
+                confl.push(clause);
             else
                 cdcl.unchecked_queue.push(std::make_pair(blocker, clause));
         }
@@ -186,7 +187,7 @@ CRef VariableWrapper::update_watchlist(Assign assign)
         }
     }
 
-    return confl;
+    return std::move(confl);
 }
 
 std::ostream& operator<<(std::ostream& stream, const Value& v)

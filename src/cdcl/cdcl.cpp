@@ -4,6 +4,7 @@
 #include "include/cdcl/cnf.hpp"
 #include <algorithm>
 #include <ostream>
+#include <utility>
 #include <vector>
 #include <iostream>
 #include <queue>
@@ -43,18 +44,6 @@ void CDCL::solve(int seed)
         auto up_result = this->unit_propogation();
         while (up_result)
         {
-            auto last_conflict_clause_ref = clausedb.get_last_cls();
-            auto& last_conflict_clause = *last_conflict_clause_ref;
-
-            Lit conflict_fuip = last_conflict_clause.literals.at(0);
-
-            int unpick_to_rank;
-
-            if (last_conflict_clause.literals.size() == 1)
-                unpick_to_rank = 1;
-            else
-                unpick_to_rank = vars_rank.at(conflict_fuip.get_var());
-
             while (pick_stack.size() >= unpick_to_rank) this->pick_stack.pop();
 
             auto deassign = this->graph.drop_to(unpick_to_rank);
@@ -63,11 +52,6 @@ void CDCL::solve(int seed)
                 update(deassign.front());
                 deassign.pop();
             }
-
-            unchecked_queue.push(
-                std::make_pair(conflict_fuip, last_conflict_clause_ref));
-
-            confl = nullCRef;
 
             up_result = this->unit_propogation();
 
@@ -89,7 +73,6 @@ void CDCL::solve(int seed)
                 }
                 while (!pick_stack.empty()) pick_stack.pop();
                 while (!unchecked_queue.empty()) unchecked_queue.pop();
-                confl = nullCRef;
 
                 luby_r++;
                 if (luby_r == luby.end())
@@ -105,18 +88,26 @@ void CDCL::solve(int seed)
     return;
 }
 
-bool CDCL::unit_propogation()
+int CDCL::unit_propogation()
 {
     Assign new_assign;
     bool conflict = false;
+    int confl_siz = 0;
+    unpick_to_rank = variable_number + 1;
 
-    if (confl != nullCRef) // Conflict encountered
+    if (!confl.empty()) // Conflict encountered
     {
-        Clause learned_clause = this->graph.conflict_clause_gen(confl);
+        while (!confl.empty())
+        {
+            Clause learned_clause =
+                this->graph.conflict_clause_gen(confl.front());
+            confl.pop();
+            confl_siz++;
 
-        clausedb.add_clause(learned_clause);
-        analyze(clausedb.get_last_cls());
-        return true;
+            clausedb.add_clause(learned_clause);
+            analyze(clausedb.get_last_cls());
+        }
+        return confl_siz;
     }
 
     do
@@ -141,24 +132,29 @@ bool CDCL::unit_propogation()
         vars_rank.at(unit_lit.get_var()) =
             this->graph.pick_var(reason, unit_lit);
 
-        auto confl = this->update(new_assign);
+        this->update(new_assign);
 
-        if (confl != nullCRef) // Conflict encountered
+        if (!confl.empty()) // Conflict encountered
         {
             conflict = true;
+            while (!confl.empty())
+            {
+                Clause learned_clause =
+                    this->graph.conflict_clause_gen(confl.front());
+                confl.pop();
+                confl_siz++;
 
-            Clause learned_clause = this->graph.conflict_clause_gen(confl);
-
-            clausedb.add_clause(learned_clause);
-            analyze(clausedb.get_last_cls());
+                clausedb.add_clause(learned_clause);
+                analyze(clausedb.get_last_cls());
+            }
         }
 
     } while (!conflict);
 
-    return conflict;
+    return confl_siz;
 }
 
-CRef CDCL::update(Assign assign)
+void CDCL::update(Assign assign)
 {
     assignment.at(assign.variable_index) = assign;
     if (assign.value != Value::Free)
@@ -166,8 +162,9 @@ CRef CDCL::update(Assign assign)
     else
         vsids.insert(assign.variable_index);
     auto res = vars.at(assign.variable_index).update_watchlist(assign);
-    if (res != nullCRef) confl = res;
-    return res;
+    while (!res.empty()) confl.push(res.front()), res.pop();
+    // if (res != nullCRef) confl = res;
+    // return res;
 }
 
 void CDCL::analyze(CRef cls)
@@ -180,6 +177,7 @@ void CDCL::analyze(CRef cls)
     if (siz == 1)
     {
         unchecked_queue.push(std::make_pair(clause.literals.back(), cls));
+        if (clause.index >= clause_size) unpick_to_rank = 1;
         return;
     }
 
@@ -196,6 +194,8 @@ void CDCL::analyze(CRef cls)
         vsids.bump_var(lit.get_var());
     }
     vsids.decay();
+    unpick_to_rank = std::min(unpick_to_rank, vars_rank.at(f.get_var()));
+    unchecked_queue.push(std::make_pair(f, cls));
 
     return;
 }
@@ -239,7 +239,6 @@ bool CDCL::parse_clause(Clause& cls)
 CDCL::CDCL(CNF& cnf)
     : variable_number(cnf.var_num()),
       clause_size(cnf.clause_size()),
-      confl(CRef(-1, clausedb)),
       nullCRef(CRef(-1, clausedb)),
       graph(*this),
       vsids(cnf.var_num())

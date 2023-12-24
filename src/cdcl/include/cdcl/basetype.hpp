@@ -1,5 +1,6 @@
 #include <vector>
 #include <list>
+#include <queue>
 #include "cnf.hpp"
 
 #pragma once
@@ -49,7 +50,7 @@ class VariableWrapper
 
 public:
     VariableWrapper(Variable, CDCL &);
-    CRef update_watchlist(Assign);
+    std::queue<CRef> update_watchlist(Assign);
     std::list<CRef> &get_watchlist(Assign);
     void watchlist_pushback(CRef, Lit);
     void set_recent_value(Value);

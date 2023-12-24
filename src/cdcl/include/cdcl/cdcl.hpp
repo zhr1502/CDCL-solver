@@ -30,17 +30,18 @@ private:
 
     std::vector<int> vars_rank;
 
-    CRef confl;
+    std::queue<CRef> confl;
 
     CRef nullCRef;
 
     ImpGraph graph;
     Heap vsids;
     bool satisfiable = false, solved = false;
+    int unpick_to_rank;
     // variable CDCL::solved will be set true when CDCL::solve() is called
     // CDCL::satisfiable implies CDCL::solved
 
-    CRef update(Assign);
+    void update(Assign);
     /*
      * CDCL::update(assign, do_return)
      * update every clauses and conflict clauses in the CDCL object
@@ -52,7 +53,7 @@ private:
      * Else return pair<nullptr, false>
      */
 
-    bool unit_propogation();
+    int unit_propogation();
     /*
      * CDCL::unit_propogation():
      * Do unit propagation. If there is conflict automatically generate conflict
