@@ -220,7 +220,10 @@ std::queue<Assign> ImpGraph::drop_to(int rank)
 ImpGraph::~ImpGraph()
 {
     for (auto node : this->vars_to_nodes)
-        if (node != nullptr) delete node;
+        if (node != nullptr) {
+            node->shrink();
+            delete node;
+        }
     return;
 }
 
@@ -251,6 +254,13 @@ ImpNode::ImpNode(Assign assign, int rank, bool fixed)
     this->rank = rank;
     this->fixed = fixed;
     return;
+}
+
+void ImpNode::shrink(){
+    in_node.clear(); 
+    out_node.clear();
+    in_reason.clear();
+    out_reason.clear();
 }
 
 int ImpNode::get_rank() { return this->rank; }

@@ -82,8 +82,11 @@ Lit ClauseWrapper::update_watcher(Variable watcher, CDCL& cdcl)
 
 bool ClauseWrapper::is_unit(Lit watcher, CDCL* cdcl)
 {
-    if (literals.size() == 1 && cdcl->get_lit_value(watcher) == Value::Free)
-        return true;
+    if (literals.size() == 1)
+    {
+        if (cdcl->get_lit_value(watcher) == Value::Free) return true;
+        return false;
+    }
 
     if (literals[0] != watcher && literals[1] != watcher) return false;
 
@@ -159,8 +162,7 @@ CRef VariableWrapper::update_watchlist(Assign assign)
 
     while (it != updlist.end())
     {
-        // watcher& w = *it;
-        CRef clause = *it;
+        CRef& clause = *it;
         Lit blocker = (*clause).get_blocker(var);
         Lit watcher = (*clause).get_blocker(blocker.get_var());
 
@@ -168,7 +170,7 @@ CRef VariableWrapper::update_watchlist(Assign assign)
 
         if (cdcl.get_lit_value(new_watch_var) == Value::False)
         {
-            if (cdcl.get_lit_value(blocker) == Value::False)
+            if (cdcl.get_lit_value(blocker) == Value::False && confl == cdcl.nullCRef)
                 confl = clause;
             else
                 cdcl.unchecked_queue.push(std::make_pair(blocker, clause));
@@ -178,10 +180,9 @@ CRef VariableWrapper::update_watchlist(Assign assign)
             it++;
         else
         {
-            it = updlist.erase(it);
-
             cdcl.vars.at(new_watch_var.get_var())
                 .watchlist_pushback(clause, new_watch_var);
+            it = updlist.erase(it);
         }
     }
 

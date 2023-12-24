@@ -94,6 +94,7 @@ public:
     int get_rank();
     int get_var_index();
     Assign get_assign();
+    void shrink();
 
     const std::vector<ImpNode *> &get_in_node();
 
